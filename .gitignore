@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.python-version
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+*.egg-info/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Secrets / Keys
+*.pem
+*.key
+*.p12
+secrets/
+keystore/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Test artifacts
+coverage/
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Docker volumes
+docker-volumes/

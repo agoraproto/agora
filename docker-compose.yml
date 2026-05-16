@@ -1,0 +1,77 @@
+# ──────────────────────────────────────────────────────────
+# Agora – Local Development Stack
+# Start: docker compose up -d
+# Stop:  docker compose down
+# Reset: docker compose down -v
+# ──────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agora_dev_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-agora}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agora}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: agora-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  typesense:
+    image: typesense/typesense:0.25.2
+    container_name: agora-typesense
+    restart: unless-stopped
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-agora_dev_typesense_key}
+      TYPESENSE_ENABLE_CORS: "true"
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense_data:/data
+
+  qdrant:
+    image: qdrant/qdrant:v1.10.0
+    container_name: agora-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  anvil:
+    # Local Ethereum dev node for Smart-Contract-Tests (Foundry)
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: agora-anvil
+    restart: unless-stopped
+    command: "anvil --host 0.0.0.0 --chain-id 31337 --block-time 2"
+    ports:
+      - "8545:8545"
+
+volumes:
+  postgres_data:
+  redis_data:
+  typesense_data:
+  qdrant_data:
