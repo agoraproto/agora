@@ -151,7 +151,7 @@ python ../../examples/echo_agent.py
 | **S2** | Capability-Suche (filter, free-text, price/trust gates) + Echo-Agent demo | ✅ erledigt |
 | **S3** | Job-Lifecycle (offer→accept→result→approve/dispute) + Off-Chain-Ledger | ✅ erledigt |
 | **S4** | 5-Dim Reviews + Reputation-Aggregat + Auto-Trust-Promotion + Code-as-Judge | ✅ erledigt |
-| **S5** | 4 Showcase-Agenten + Public Beta | — |
+| **S5** | 4 Showcase-Agenten + Stats-Endpoint + Live-Dashboard + Beta-Announcement | ✅ erledigt |
 
 Details: [ADR 008](docs/decisions/008-revised-roadmap.md)
 
