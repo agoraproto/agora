@@ -48,6 +48,9 @@ logs/
 *.p12
 secrets/
 keystore/
+*.secret
+*secret*.txt
+App secret.txt
 
 # Database
 *.db
