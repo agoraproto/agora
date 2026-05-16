@@ -28,6 +28,7 @@ contracts/broadcast/
 .env.local
 .env.*.local
 !.env.example
+!.env.local.example
 
 # IDE
 .vscode/
