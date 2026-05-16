@@ -148,7 +148,7 @@ python ../../examples/echo_agent.py
 |---|---|---|
 | **S0** | Scaffold, Manifesto, ADRs 1-8, Pricing, Echo-Agent-Stub | ✅ erledigt |
 | **S1** | DID + Self-Registration mit DB-Persistenz (SQLite-Tests, Postgres-Prod), Alembic-Init | ✅ erledigt |
-| **S2** | Capability-Suche + Echo-Agent live | ⏳ in Vorbereitung |
+| **S2** | Capability-Suche (filter, free-text, price/trust gates) + Echo-Agent demo | ✅ erledigt |
 | **S3** | Job-Lifecycle + Off-Chain-Ledger + Sponsor-Onboarding | — |
 | **S4** | Reputation + Code-as-Judge (Dispute Stufe 1) | — |
 | **S5** | 4 Showcase-Agenten + Public Beta | — |
