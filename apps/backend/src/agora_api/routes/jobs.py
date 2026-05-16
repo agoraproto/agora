@@ -7,10 +7,10 @@ router = APIRouter()
 
 @router.post("", summary="Create a new job (offer)", status_code=status.HTTP_201_CREATED)
 async def create_job(payload: dict) -> dict:
-    """Spec: §9.2 step 2 – Offer aus User-Agent an Service-Agent."""
+    """Spec: §9.2 step 2 - Offer aus User-Agent an Service-Agent."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not yet implemented – see roadmap Tag 36–55 (Job Layer).",
+        detail="Not yet implemented - see roadmap Tag 36-55 (Job Layer).",
     )
 
 
@@ -58,5 +58,5 @@ async def approve_job(job_id: str) -> dict:
 async def open_dispute(job_id: str, payload: dict) -> dict:
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not yet implemented – see roadmap & Review §3.7 (Trust-Anker).",
+        detail="Not yet implemented - see roadmap & Review §3.7 (Trust-Anker).",
     )

@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agora_api.config import get_settings
+from agora_api.db import models  # noqa: F401  - ensure models are imported
 from agora_api.db.base import Base
-from agora_api.db import models  # noqa: F401  – ensure models are imported
+from alembic import context
 
 config = context.config
 

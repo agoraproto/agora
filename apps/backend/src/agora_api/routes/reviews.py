@@ -9,7 +9,7 @@ router = APIRouter()
 async def submit_review(payload: dict) -> dict:
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not yet implemented – see roadmap Tag 71–80 (Reputation Layer).",
+        detail="Not yet implemented - see roadmap Tag 71-80 (Reputation Layer).",
     )
 
 

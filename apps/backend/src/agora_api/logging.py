@@ -1,4 +1,4 @@
-"""Structured logging via structlog – JSON in production, pretty locally."""
+"""Structured logging via structlog - JSON in production, pretty locally."""
 
 import logging
 import sys

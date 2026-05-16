@@ -34,7 +34,10 @@ async def quote(payload: QuoteRequest) -> QuoteResponse:
     if amount <= 0:
         raise HTTPException(status_code=400, detail="amount must be > 0")
     if is_amount_too_small(amount):
-        raise HTTPException(status_code=400, detail="amount too small (min fee would consume payout)")
+        raise HTTPException(
+            status_code=400,
+            detail="amount too small (min fee would consume payout)",
+        )
     b = compute_fee(amount)
     return QuoteResponse(
         amount=str(b.amount),
@@ -49,9 +52,15 @@ async def quote(payload: QuoteRequest) -> QuoteResponse:
 
 @router.post("/execute")
 async def execute(payload: dict) -> dict:
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Bootstrap phase: off-chain ledger first (ADR 003).")
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Bootstrap phase: off-chain ledger first (ADR 003).",
+    )
 
 
 @router.get("/{tx_id}")
 async def get_tx(tx_id: str) -> dict:
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not yet implemented.")
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Not yet implemented.",
+    )

@@ -1,6 +1,6 @@
 """SQLAlchemy base + async session management."""
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

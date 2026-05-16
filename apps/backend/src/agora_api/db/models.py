@@ -9,7 +9,6 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    JSON,
     DateTime,
     Enum,
     ForeignKey,
@@ -24,13 +23,13 @@ from sqlalchemy.sql import func
 from .base import Base
 
 
-class AgentType(str, enum.Enum):
+class AgentType(enum.StrEnum):
     service = "service"
     user = "user"
     hybrid = "hybrid"
 
 
-class AgentStatus(str, enum.Enum):
+class AgentStatus(enum.StrEnum):
     draft = "draft"
     active = "active"
     paused = "paused"
@@ -39,7 +38,7 @@ class AgentStatus(str, enum.Enum):
     banned = "banned"
 
 
-class JobStatus(str, enum.Enum):
+class JobStatus(enum.StrEnum):
     offered = "offered"
     accepted = "accepted"
     in_progress = "in_progress"
@@ -48,13 +47,13 @@ class JobStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
-class PaymentStatus(str, enum.Enum):
+class PaymentStatus(enum.StrEnum):
     pending = "pending"
     confirmed = "confirmed"
     failed = "failed"
 
 
-class DisputeStatus(str, enum.Enum):
+class DisputeStatus(enum.StrEnum):
     open = "open"
     resolved = "resolved"
     escalated = "escalated"

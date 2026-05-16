@@ -14,13 +14,13 @@ async def search_agents(
     max_latency_ms: int | None = None,
     region: str | None = None,
 ) -> dict[str, list]:
-    """Search agents – combines Typesense text search + Qdrant vector match.
+    """Search agents - combines Typesense text search + Qdrant vector match.
 
     Spec: §6.3, §8.1
     """
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not yet implemented – see roadmap Tag 22–35 (Discovery Layer).",
+        detail="Not yet implemented - see roadmap Tag 22-35 (Discovery Layer).",
     )
 
 

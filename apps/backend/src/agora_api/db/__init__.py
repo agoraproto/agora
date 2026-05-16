@@ -1,1 +1,1 @@
-"""Database layer – SQLAlchemy async."""
+"""Database layer - SQLAlchemy async."""

@@ -15,7 +15,7 @@ async def liveness() -> dict[str, str]:
 
 @router.get("/readyz")
 async def readiness() -> dict[str, str | bool]:
-    """Readiness probe – extended over time to check DB, Redis, etc."""
+    """Readiness probe - extended over time to check DB, Redis, etc."""
     settings = get_settings()
     return {
         "status": "ok",

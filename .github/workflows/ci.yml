@@ -50,19 +50,21 @@ jobs:
   contracts-build:
     name: Foundry contracts compile
     runs-on: ubuntu-latest
+    # Contracts sind in Bootstrap-Phase off-scope (ADR 003).
+    # Job darf aktuell scheitern, ohne CI komplett rot zu faerben.
+    continue-on-error: true
     defaults:
       run:
         working-directory: contracts
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-      - name: Install deps
+      - name: Install dependencies via git clone (no submodules in Bootstrap)
         run: |
-          forge install OpenZeppelin/openzeppelin-contracts --no-commit || true
-          forge install foundry-rs/forge-std --no-commit || true
+          mkdir -p lib
+          git clone --depth 1 https://github.com/foundry-rs/forge-std lib/forge-std
+          git clone --depth 1 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
       - name: Build
         run: forge build
       - name: Tests

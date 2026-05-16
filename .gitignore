@@ -57,6 +57,7 @@ keystore/
 coverage/
 .coverage
 .pytest_cache/
+pytest-cache-files-*/
 htmlcov/
 
 # Docker volumes
