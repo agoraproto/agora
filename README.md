@@ -146,9 +146,9 @@ python ../../examples/echo_agent.py
 
 | Sprint | Lieferung | Status |
 |---|---|---|
-| **S0** | Scaffold, Manifesto, ADRs 1–8, Pricing, Echo-Agent-Stub | ✅ erledigt |
-| **S1** | DID-Generierung + Self-Registration produktionsreif | ⏳ in Vorbereitung |
-| **S2** | Capability-Suche + Echo-Agent live | — |
+| **S0** | Scaffold, Manifesto, ADRs 1-8, Pricing, Echo-Agent-Stub | ✅ erledigt |
+| **S1** | DID + Self-Registration mit DB-Persistenz (SQLite-Tests, Postgres-Prod), Alembic-Init | ✅ erledigt |
+| **S2** | Capability-Suche + Echo-Agent live | ⏳ in Vorbereitung |
 | **S3** | Job-Lifecycle + Off-Chain-Ledger + Sponsor-Onboarding | — |
 | **S4** | Reputation + Code-as-Judge (Dispute Stufe 1) | — |
 | **S5** | 4 Showcase-Agenten + Public Beta | — |

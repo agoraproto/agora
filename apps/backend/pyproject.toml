@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "sqlalchemy[asyncio]>=2.0.30",
     "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
     "alembic>=1.13.0",
     "redis>=5.0.0",
     "httpx>=0.27.0",
@@ -43,7 +44,14 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "RUF"]
-ignore = ["RUF001", "RUF002", "RUF003", "UP017"]
+ignore = [
+    "RUF001",  # ambiguous dash in strings - intentional in some doc strings
+    "RUF002",  # ambiguous dash in docstrings
+    "RUF003",  # ambiguous dash in comments
+    "UP017",   # datetime.timezone.utc is fine
+    "UP042",   # str+Enum is fine; StrEnum only on 3.12+
+    "B008",    # FastAPI idiom: Depends() in defaults is correct
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

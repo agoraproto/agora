@@ -44,8 +44,15 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return _sessionmaker
 
 
+def reset_engine_for_tests(new_sessionmaker: async_sessionmaker[AsyncSession]) -> None:
+    """Test helper: replace the module-level sessionmaker (and skip the real engine)."""
+    global _sessionmaker, _engine
+    _sessionmaker = new_sessionmaker
+    _engine = None  # tests bring their own engine via the new_sessionmaker
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency to inject a DB session."""
+    """FastAPI dependency injection: yield an AsyncSession per request."""
     sm = get_sessionmaker()
     async with sm() as session:
         yield session
