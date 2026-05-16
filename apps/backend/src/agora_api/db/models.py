@@ -5,7 +5,7 @@ Postgres-specific ones, so the same schema runs on Postgres (prod) and
 SQLite (tests / dev). Postgres-specific tuning (JSONB indexes, etc.) is
 added in Alembic migrations once needed.
 
-Spec ref: §7.1, plus ADR 003/004/006/007 fields on Agent/Job/Ledger.
+Spec ref: §7.1, plus ADR 003/004/006/007/008 fields.
 """
 
 from __future__ import annotations
@@ -74,19 +74,20 @@ class PaymentStatus(str, enum.Enum):
 
 class DisputeStatus(str, enum.Enum):
     open = "open"
-    resolved = "resolved"
+    resolved_for_requester = "resolved_for_requester"
+    resolved_for_provider = "resolved_for_provider"
     escalated = "escalated"
 
 
 class LedgerEntryType(str, enum.Enum):
-    deposit = "deposit"          # Agent funds wallet (off-chain, manually for now)
-    escrow_hold = "escrow_hold"  # requester funds locked into a job
-    escrow_release = "escrow_release"  # job approved -> payee receives net
-    platform_fee = "platform_fee"      # platform share of fee
-    insurance_fee = "insurance_fee"    # insurance pool share of fee
-    refund = "refund"            # job refunded -> requester gets full back
-    sponsor_slash = "sponsor_slash"    # sponsor loses stake (ADR 007)
-    withdraw = "withdraw"        # agent withdraws to external wallet
+    deposit = "deposit"
+    escrow_hold = "escrow_hold"
+    escrow_release = "escrow_release"
+    platform_fee = "platform_fee"
+    insurance_fee = "insurance_fee"
+    refund = "refund"
+    sponsor_slash = "sponsor_slash"
+    withdraw = "withdraw"
 
 
 class TimestampMixin:
@@ -102,8 +103,6 @@ class TimestampMixin:
 
 
 class User(Base, TimestampMixin):
-    """Human or organisational owner. Optional in agent-first design (ADR 006)."""
-
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -115,8 +114,6 @@ class User(Base, TimestampMixin):
 
 
 class Agent(Base, TimestampMixin):
-    """A registered agent. Per ADR 006 owner can be a User (human) OR self-owned (DID only)."""
-
     __tablename__ = "agents"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -145,6 +142,12 @@ class Agent(Base, TimestampMixin):
 
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus), default=AgentStatus.active)
+
+    # Reputation cache (Sprint 4): aggregated from `reviews`. Source-of-truth
+    # is the reviews table; these columns let listings stay cheap.
+    reputation_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    reputation_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    jobs_completed: Mapped[int] = mapped_column(default=0, nullable=False)
 
     owner: Mapped[User | None] = relationship(back_populates="agents")
     credentials: Mapped[list[Credential]] = relationship(back_populates="agent")
@@ -186,12 +189,6 @@ class Job(Base, TimestampMixin):
 
 
 class LedgerBalance(Base, TimestampMixin):
-    """Off-chain wallet balance per agent (ADR 003 bootstrap phase).
-
-    Once onchain phase ships, this is reconciled against the AgoraEscrow
-    contract; until then it IS the source of truth.
-    """
-
     __tablename__ = "ledger_balances"
 
     agent_did: Mapped[str] = mapped_column(String(255), primary_key=True)
@@ -201,18 +198,12 @@ class LedgerBalance(Base, TimestampMixin):
 
 
 class LedgerEntry(Base, TimestampMixin):
-    """Immutable audit log of every ledger movement.
-
-    Sum of entries per (agent_did, currency) reconstructs the balance.
-    """
-
     __tablename__ = "ledger_entries"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     agent_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
     entry_type: Mapped[LedgerEntryType] = mapped_column(Enum(LedgerEntryType), nullable=False)
-    # Positive credits funds into the account, negative debits.
     delta_available: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     delta_escrow: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("jobs.id"), nullable=True)
@@ -236,6 +227,10 @@ class Payment(Base, TimestampMixin):
 
 
 class Review(Base, TimestampMixin):
+    """5-dimension review (Spec §6.6). scores is a JSON dict with keys
+    accuracy, speed, cost, reliability, communication — each 1.0..5.0.
+    """
+
     __tablename__ = "reviews"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -244,11 +239,12 @@ class Review(Base, TimestampMixin):
         Uuid, ForeignKey("agents.id"), nullable=False
     )
     reviewee_agent_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("agents.id"), nullable=False
+        Uuid, ForeignKey("agents.id"), nullable=False, index=True
     )
     scores: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     comment: Mapped[str | None] = mapped_column(Text)
-    signature: Mapped[str] = mapped_column(Text, nullable=False)
+    signature: Mapped[str] = mapped_column(Text, default="")
+    aggregate_score: Mapped[Decimal] = mapped_column(Numeric(3, 2), nullable=False)
 
 
 class Dispute(Base, TimestampMixin):
@@ -264,3 +260,4 @@ class Dispute(Base, TimestampMixin):
     status: Mapped[DisputeStatus] = mapped_column(Enum(DisputeStatus), default=DisputeStatus.open)
     resolution: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

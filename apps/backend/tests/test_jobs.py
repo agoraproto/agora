@@ -234,7 +234,9 @@ async def test_dispute_pauses_escrow(
         json={"reason": "result is wrong", "evidence": {"hash": "abc"}},
     )
     assert dispute.status_code == 200
-    assert dispute.json()["status"] == "disputed"
+    body = dispute.json()
+    assert body["job_status"] == "disputed"
+    assert body["dispute"]["status"] == "escalated"
 
     # Cannot approve a disputed job
     approve = await client.post(f"/v1/jobs/{job_id}/approve")

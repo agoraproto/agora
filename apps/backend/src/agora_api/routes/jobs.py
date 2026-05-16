@@ -1,7 +1,8 @@
 """Job lifecycle routes (Spec §6.4, §8.1, §9.2).
 
 Off-chain ledger backs the escrow (ADR 003). State transitions are validated
-in jobs_repo.transition().
+in jobs_repo.transition(). Stage-1 dispute auto-resolution lives in
+disputes_repo.code_as_judge().
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db import agents_repo, jobs_repo, ledger_repo
+from ..db import agents_repo, disputes_repo, jobs_repo, ledger_repo, reviews_repo
 from ..db.base import get_session
 from ..db.jobs_repo import IllegalTransition
 from ..db.ledger_repo import InsufficientFunds
@@ -64,11 +65,7 @@ async def _get_agent_by_id(session: AsyncSession, agent_id: uuid.UUID) -> Agent:
     return (await session.execute(select(Agent).where(Agent.id == agent_id))).scalar_one()
 
 
-@router.post(
-    "",
-    summary="Create a new job offer with escrow",
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", summary="Create a new job offer with escrow", status_code=status.HTTP_201_CREATED)
 async def create_job(
     payload: JobCreateRequest,
     session: AsyncSession = Depends(get_session),
@@ -185,6 +182,8 @@ async def approve_job(
         job_id=job.id,
     )
     await jobs_repo.transition(session, job, JobStatus.completed)
+    await reviews_repo.increment_jobs_completed(session, r)
+    await reviews_repo.increment_jobs_completed(session, p)
     await session.commit()
     return {
         "id": str(job.id),
@@ -194,10 +193,11 @@ async def approve_job(
     }
 
 
-@router.post("/{job_id}/dispute", summary="Open a dispute (pauses escrow)")
+@router.post("/{job_id}/dispute", summary="Open a dispute; runs Stage-1 code-as-judge")
 async def open_dispute(
     job_id: str,
     payload: DisputePayload,
+    raised_by_did: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
@@ -205,12 +205,58 @@ async def open_dispute(
         raise HTTPException(
             status_code=409, detail=f"cannot dispute from state {job.status.value}"
         )
+
+    raiser_id = job.requester_agent_id
+    if raised_by_did:
+        raiser = await agents_repo.get_by_did(session, raised_by_did)
+        if raiser is None:
+            raise HTTPException(status_code=404, detail=f"agent {raised_by_did} not found")
+        if raiser.id not in (job.requester_agent_id, job.provider_agent_id):
+            raise HTTPException(status_code=403, detail="agent is not party to this job")
+        raiser_id = raiser.id
+
+    dispute = await disputes_repo.open_dispute(
+        session,
+        job=job,
+        raised_by_id=raiser_id,
+        reason=payload.reason,
+        evidence=payload.evidence,
+    )
     job.status = JobStatus.disputed
-    note = {"dispute_reason": payload.reason, "evidence": payload.evidence}
-    job.result = {**(job.result or {}), "_dispute": note}
     await session.flush()
+
+    verdict = disputes_repo.code_as_judge(job, payload.evidence)
+    await disputes_repo.apply_verdict(session, dispute, verdict)
+
+    r = await _get_agent_by_id(session, job.requester_agent_id)
+    p = await _get_agent_by_id(session, job.provider_agent_id)
+    if verdict.get("outcome") == "resolved":
+        if verdict["winner"] == "requester":
+            await ledger_repo.refund_escrow(session, r.did, job.price_amount, job.id)
+            job.status = JobStatus.refunded
+        elif verdict["winner"] == "provider":
+            breakdown = compute_fee(job.price_amount)
+            await ledger_repo.release_escrow(
+                session,
+                payer_did=r.did,
+                payee_did=p.did,
+                amount=job.price_amount,
+                platform_cut=breakdown.platform_cut,
+                insurance_cut=breakdown.insurance_cut,
+                payout=breakdown.payee_receives,
+                job_id=job.id,
+            )
+            job.status = JobStatus.completed
+            await reviews_repo.increment_jobs_completed(session, r)
+            await reviews_repo.increment_jobs_completed(session, p)
+        await session.flush()
+
     await session.commit()
-    return {"id": str(job.id), "status": job.status.value}
+    return {
+        "job_id": str(job.id),
+        "job_status": job.status.value,
+        "dispute": disputes_repo.to_public_dict(dispute),
+    }
 
 
 @router.get("", summary="List jobs (filter by requester_did, provider_did, status)")
