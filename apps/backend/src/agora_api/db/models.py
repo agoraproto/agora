@@ -5,7 +5,7 @@ Postgres-specific ones, so the same schema runs on Postgres (prod) and
 SQLite (tests / dev). Postgres-specific tuning (JSONB indexes, etc.) is
 added in Alembic migrations once needed.
 
-Spec ref: §7.1, plus ADR 006/007 fields on Agent.
+Spec ref: §7.1, plus ADR 003/004/006/007 fields on Agent/Job/Ledger.
 """
 
 from __future__ import annotations
@@ -59,9 +59,11 @@ class JobStatus(str, enum.Enum):
     offered = "offered"
     accepted = "accepted"
     in_progress = "in_progress"
+    submitted = "submitted"
     completed = "completed"
     disputed = "disputed"
     cancelled = "cancelled"
+    refunded = "refunded"
 
 
 class PaymentStatus(str, enum.Enum):
@@ -74,6 +76,17 @@ class DisputeStatus(str, enum.Enum):
     open = "open"
     resolved = "resolved"
     escalated = "escalated"
+
+
+class LedgerEntryType(str, enum.Enum):
+    deposit = "deposit"          # Agent funds wallet (off-chain, manually for now)
+    escrow_hold = "escrow_hold"  # requester funds locked into a job
+    escrow_release = "escrow_release"  # job approved -> payee receives net
+    platform_fee = "platform_fee"      # platform share of fee
+    insurance_fee = "insurance_fee"    # insurance pool share of fee
+    refund = "refund"            # job refunded -> requester gets full back
+    sponsor_slash = "sponsor_slash"    # sponsor loses stake (ADR 007)
+    withdraw = "withdraw"        # agent withdraws to external wallet
 
 
 class TimestampMixin:
@@ -109,7 +122,6 @@ class Agent(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     did: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
-    # Human owner is optional; agents can be self-owned (owner_did == did)
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id"), nullable=True
     )
@@ -124,7 +136,6 @@ class Agent(Base, TimestampMixin):
     constraints: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     did_document: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
-    # Anti-Sybil (ADR 007)
     stake_eur: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     sponsor_did: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sponsor_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -132,9 +143,7 @@ class Agent(Base, TimestampMixin):
         Enum(TrustLevel), default=TrustLevel.probation
     )
 
-    # Auth / Webhook
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
-
     status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus), default=AgentStatus.active)
 
     owner: Mapped[User | None] = relationship(back_populates="agents")
@@ -174,6 +183,40 @@ class Job(Base, TimestampMixin):
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LedgerBalance(Base, TimestampMixin):
+    """Off-chain wallet balance per agent (ADR 003 bootstrap phase).
+
+    Once onchain phase ships, this is reconciled against the AgoraEscrow
+    contract; until then it IS the source of truth.
+    """
+
+    __tablename__ = "ledger_balances"
+
+    agent_did: Mapped[str] = mapped_column(String(255), primary_key=True)
+    currency: Mapped[str] = mapped_column(String(8), primary_key=True, default="EURC")
+    available: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"), nullable=False)
+    in_escrow: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"), nullable=False)
+
+
+class LedgerEntry(Base, TimestampMixin):
+    """Immutable audit log of every ledger movement.
+
+    Sum of entries per (agent_did, currency) reconstructs the balance.
+    """
+
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    agent_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_type: Mapped[LedgerEntryType] = mapped_column(Enum(LedgerEntryType), nullable=False)
+    # Positive credits funds into the account, negative debits.
+    delta_available: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    delta_escrow: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("jobs.id"), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Payment(Base, TimestampMixin):
