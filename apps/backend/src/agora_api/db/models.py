@@ -131,7 +131,7 @@ class Agent(Base, TimestampMixin):
     )
     owner_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
-    type: Mapped[AgentType] = mapped_column(Enum(AgentType), default=AgentType.service)
+    type: Mapped[AgentType] = mapped_column(Enum(AgentType, native_enum=False), default=AgentType.service)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     public_endpoint: Mapped[str | None] = mapped_column(Text)
@@ -144,11 +144,11 @@ class Agent(Base, TimestampMixin):
     sponsor_did: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sponsor_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     trust_level: Mapped[TrustLevel] = mapped_column(
-        Enum(TrustLevel), default=TrustLevel.probation
+        Enum(TrustLevel, native_enum=False), default=TrustLevel.probation
     )
 
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus), default=AgentStatus.active)
+    status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus, native_enum=False), default=AgentStatus.active)
 
     reputation_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     reputation_count: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -184,7 +184,7 @@ class Job(Base, TimestampMixin):
         Uuid, ForeignKey("agents.id"), nullable=False
     )
     task_spec: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.offered)
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), default=JobStatus.offered)
     price_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     price_currency: Mapped[str] = mapped_column(String(8), default="EURC")
     escrow_tx_hash: Mapped[str | None] = mapped_column(Text)
@@ -208,7 +208,7 @@ class LedgerEntry(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     agent_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
-    entry_type: Mapped[LedgerEntryType] = mapped_column(Enum(LedgerEntryType), nullable=False)
+    entry_type: Mapped[LedgerEntryType] = mapped_column(Enum(LedgerEntryType, native_enum=False), nullable=False)
     delta_available: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     delta_escrow: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("jobs.id"), nullable=True)
@@ -227,7 +227,7 @@ class Payment(Base, TimestampMixin):
     chain: Mapped[str] = mapped_column(String(32), default="base-sepolia")
     tx_hash: Mapped[str | None] = mapped_column(Text)
     status: Mapped[PaymentStatus] = mapped_column(
-        Enum(PaymentStatus), default=PaymentStatus.pending
+        Enum(PaymentStatus, native_enum=False), default=PaymentStatus.pending
     )
 
 
@@ -258,7 +258,7 @@ class Dispute(Base, TimestampMixin):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    status: Mapped[DisputeStatus] = mapped_column(Enum(DisputeStatus), default=DisputeStatus.open)
+    status: Mapped[DisputeStatus] = mapped_column(Enum(DisputeStatus, native_enum=False), default=DisputeStatus.open)
     resolution: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -283,7 +283,10 @@ class WebhookDelivery(Base, TimestampMixin):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     status: Mapped[WebhookDeliveryStatus] = mapped_column(
-        Enum(WebhookDeliveryStatus), default=WebhookDeliveryStatus.pending, nullable=False, index=True
+        Enum(WebhookDeliveryStatus, native_enum=False),
+        default=WebhookDeliveryStatus.pending,
+        nullable=False,
+        index=True,
     )
     attempt_count: Mapped[int] = mapped_column(default=0, nullable=False)
     next_attempt_at: Mapped[datetime] = mapped_column(

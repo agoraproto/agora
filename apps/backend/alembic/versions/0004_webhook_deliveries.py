@@ -22,6 +22,7 @@ depends_on: str | Sequence[str] | None = None
 _STATUS = sa.Enum(
     "pending", "delivering", "delivered", "failed", "exhausted",
     name="webhookdeliverystatus",
+    native_enum=False,
 )
 
 
