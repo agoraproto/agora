@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from agora_api.db.agents_repo import create as create_agent
 from agora_api.db.ledger_repo import deposit
 from agora_api.db.models import WebhookDelivery
 

@@ -12,11 +12,7 @@ from agora_api.db import webhooks_repo
 from agora_api.db.models import WebhookDelivery, WebhookDeliveryStatus
 from agora_api.webhooks import delivery as worker_module
 from agora_api.webhooks.delivery import process_batch
-from agora_api.webhooks.signing import (
-    SignatureInvalid,
-    get_signer,
-    verify_signature,
-)
+from agora_api.webhooks.signing import get_signer, verify_signature
 
 
 @pytest.fixture(autouse=True)
@@ -98,7 +94,9 @@ async def test_delivery_retries_on_5xx(session, monkeypatch) -> None:
     assert d.status == WebhookDeliveryStatus.pending  # back to pending for retry
     assert d.attempt_count == 1
     assert d.last_response_status == 503
-    now = datetime.now(timezone.utc).replace(tzinfo=None) if d.next_attempt_at.tzinfo is None else datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    if d.next_attempt_at.tzinfo is None:
+        now = now.replace(tzinfo=None)
     assert d.next_attempt_at > now + timedelta(seconds=10)
 
 
@@ -145,8 +143,9 @@ async def test_delivery_exhausts_after_max_attempts(session, monkeypatch) -> Non
 
 async def test_enqueue_skips_when_no_endpoint(session) -> None:
     """enqueue_for_agent should be a no-op when the agent has no endpoint."""
-    from agora_api.db.agents_repo import create as create_agent
     from decimal import Decimal
+
+    from agora_api.db.agents_repo import create as create_agent
 
     agent, _secret = await create_agent(
         session,

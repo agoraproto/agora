@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             stop_event.set()
             try:
                 await asyncio.wait_for(worker_task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 worker_task.cancel()
         log.info("agora_api.shutdown")
 
