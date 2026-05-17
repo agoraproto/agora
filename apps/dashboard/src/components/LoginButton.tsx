@@ -21,10 +21,13 @@ export function LoginButton() {
     );
   }
 
+  const walletShort = user?.wallet?.address
+    ? `${user.wallet.address.slice(0, 6)}…`
+    : undefined;
   const label =
     user?.email?.address ??
     user?.google?.email ??
-    user?.wallet?.address?.slice(0, 6) + "…" ??
+    walletShort ??
     "Logged in";
 
   return (
