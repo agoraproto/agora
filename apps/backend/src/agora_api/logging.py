@@ -14,10 +14,12 @@ def configure_logging() -> None:
 
     timestamper = structlog.processors.TimeStamper(fmt="iso")
 
+    # NOTE: structlog.stdlib.add_logger_name is incompatible with
+    # PrintLoggerFactory (PrintLogger has no .name attribute). Use a context-
+    # var-based logger name instead, or omit it entirely as we do here.
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
         timestamper,
     ]
 
@@ -33,7 +35,6 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-    # Bridge stdlib logging into structlog
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -42,4 +43,7 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    log = structlog.get_logger()
+    if name:
+        log = log.bind(component=name)
+    return log

@@ -2,8 +2,7 @@
 
 Cross-DB-compatible: uses portable SQLAlchemy types (Uuid, JSON) instead of
 Postgres-specific ones, so the same schema runs on Postgres (prod) and
-SQLite (tests / dev). Postgres-specific tuning (JSONB indexes, etc.) is
-added in Alembic migrations once needed.
+SQLite (tests / dev).
 
 Spec ref: §7.1, plus ADR 003/004/006/007/008 fields.
 """
@@ -90,6 +89,14 @@ class LedgerEntryType(str, enum.Enum):
     withdraw = "withdraw"
 
 
+class WebhookDeliveryStatus(str, enum.Enum):
+    pending = "pending"
+    delivering = "delivering"
+    delivered = "delivered"
+    failed = "failed"
+    exhausted = "exhausted"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -143,8 +150,6 @@ class Agent(Base, TimestampMixin):
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus), default=AgentStatus.active)
 
-    # Reputation cache (Sprint 4): aggregated from `reviews`. Source-of-truth
-    # is the reviews table; these columns let listings stay cheap.
     reputation_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     reputation_count: Mapped[int] = mapped_column(default=0, nullable=False)
     jobs_completed: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -227,10 +232,6 @@ class Payment(Base, TimestampMixin):
 
 
 class Review(Base, TimestampMixin):
-    """5-dimension review (Spec §6.6). scores is a JSON dict with keys
-    accuracy, speed, cost, reliability, communication — each 1.0..5.0.
-    """
-
     __tablename__ = "reviews"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -261,3 +262,35 @@ class Dispute(Base, TimestampMixin):
     resolution: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class WebhookDelivery(Base, TimestampMixin):
+    """Persistent webhook delivery queue (Sprint 6 / ADR 008)."""
+
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    agent_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("agents.id"), nullable=True
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("jobs.id"), nullable=True, index=True
+    )
+
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    status: Mapped[WebhookDeliveryStatus] = mapped_column(
+        Enum(WebhookDeliveryStatus), default=WebhookDeliveryStatus.pending, nullable=False, index=True
+    )
+    attempt_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    last_response_status: Mapped[int | None] = mapped_column(default=None, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

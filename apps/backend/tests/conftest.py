@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import StaticPool
 
 from agora_api.db.base import Base, get_session, reset_engine_for_tests
 from agora_api.main import app
@@ -18,10 +19,16 @@ from agora_api.main import app
 
 @pytest_asyncio.fixture
 async def db_sessionmaker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Fresh in-memory SQLite per test, schema migrated via Base.metadata."""
+    """Fresh in-memory SQLite per test, schema migrated via Base.metadata.
+
+    Uses StaticPool so all sessions (test-direct + ASGI-override) share the
+    same connection and therefore see the same in-memory database.
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

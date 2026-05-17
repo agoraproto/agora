@@ -115,3 +115,20 @@ Wenn du eine der Aufgaben oben erledigt hast, sag mir einfach:
 > ⏳ "Server-IP: `1.2.3.4`, SSH-User: `agora`"
 
 Ich aktualisiere dann die .env, ADRs und alles abhängige automatisch.
+
+---
+
+## Vor Hetzner-Deploy (Sprint 6 abgeschlossen)
+
+### 7. Webhook-Signing-Key generieren (ADR 008)
+- **Was:** Stabilen Ed25519-Schlüssel für die Signatur ausgehender Webhooks erzeugen
+- **Wie:** In PowerShell ausführen (eine Zeile):
+  ```powershell
+  cd C:\Users\WAVO\Desktop\Projekte\agor\apps\backend
+  python -c "from nacl.signing import SigningKey; import base64; print(base64.b64encode(SigningKey.generate().encode()).decode())"
+  ```
+- **Output:** ein ~44-Zeichen base64-String, z.B. `nq0v0p8...=`
+- **Wo eintragen:** `apps/backend/.env` (gitignored!), Zeile `AGORA_SIGNING_PRIVATE_KEY_B64=...`
+- **Auch setzen:** `AGORA_SIGNING_KEY_ID=agora-2026-05` (oder anderer Identifier)
+- **Warum nur du:** der Schlüssel darf nie ins Repo, nicht in den Chat, nirgendwohin außer in `.env` auf Servern, die du kontrollierst
+- **Wenn du das nicht machst:** beim ersten Start generiert das Backend einen ephemeren Schlüssel und ändert den Public Key bei jedem Neustart — Empfänger könnten ihn nicht cachen

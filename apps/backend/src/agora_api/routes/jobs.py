@@ -1,9 +1,4 @@
-"""Job lifecycle routes (Spec §6.4, §8.1, §9.2).
-
-Off-chain ledger backs the escrow (ADR 003). State transitions are validated
-in jobs_repo.transition(). Stage-1 dispute auto-resolution lives in
-disputes_repo.code_as_judge().
-"""
+"""Job lifecycle routes (Spec §6.4, §8.1, §9.2)."""
 
 from __future__ import annotations
 
@@ -22,6 +17,7 @@ from ..db.jobs_repo import IllegalTransition
 from ..db.ledger_repo import InsufficientFunds
 from ..db.models import Agent, Job, JobStatus
 from ..pricing import compute_fee
+from ..webhooks.delivery import enqueue_for_agent
 
 router = APIRouter()
 
@@ -65,6 +61,23 @@ async def _get_agent_by_id(session: AsyncSession, agent_id: uuid.UUID) -> Agent:
     return (await session.execute(select(Agent).where(Agent.id == agent_id))).scalar_one()
 
 
+def _job_event_payload(
+    job: Job, requester: Agent, provider: Agent, *, extra: dict | None = None
+) -> dict:
+    base = {
+        "job_id": str(job.id),
+        "requester_did": requester.did,
+        "provider_did": provider.did,
+        "task": job.task_spec or {},
+        "price_amount": str(job.price_amount),
+        "price_currency": job.price_currency,
+        "status": job.status.value,
+    }
+    if extra:
+        base.update(extra)
+    return base
+
+
 @router.post("", summary="Create a new job offer with escrow", status_code=status.HTTP_201_CREATED)
 async def create_job(
     payload: JobCreateRequest,
@@ -96,6 +109,14 @@ async def create_job(
         await session.rollback()
         raise HTTPException(status_code=402, detail=str(e)) from e
 
+    await enqueue_for_agent(
+        session,
+        agent=provider,
+        job_id=job.id,
+        event_type="job.offered",
+        payload=_job_event_payload(job, requester, provider),
+    )
+
     await session.commit()
     return jobs_repo.to_public_dict(job, requester.did, provider.did)
 
@@ -119,6 +140,15 @@ async def accept_job(
         await jobs_repo.transition(session, job, JobStatus.accepted)
     except IllegalTransition as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    r = await _get_agent_by_id(session, job.requester_agent_id)
+    p = await _get_agent_by_id(session, job.provider_agent_id)
+    await enqueue_for_agent(
+        session,
+        agent=r,
+        job_id=job.id,
+        event_type="job.accepted",
+        payload=_job_event_payload(job, r, p),
+    )
     await session.commit()
     return {"id": str(job.id), "status": job.status.value}
 
@@ -133,9 +163,17 @@ async def reject_job(
             status_code=409, detail=f"can only reject 'offered' jobs (was {job.status.value})"
         )
     r = await _get_agent_by_id(session, job.requester_agent_id)
+    p = await _get_agent_by_id(session, job.provider_agent_id)
     await ledger_repo.refund_escrow(session, r.did, job.price_amount, job.id)
     job.status = JobStatus.cancelled
     await session.flush()
+    await enqueue_for_agent(
+        session,
+        agent=r,
+        job_id=job.id,
+        event_type="job.rejected",
+        payload=_job_event_payload(job, r, p),
+    )
     await session.commit()
     return {"id": str(job.id), "status": job.status.value}
 
@@ -152,6 +190,15 @@ async def submit_result(
     except IllegalTransition as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     await jobs_repo.set_result(session, job, payload.result)
+    r = await _get_agent_by_id(session, job.requester_agent_id)
+    p = await _get_agent_by_id(session, job.provider_agent_id)
+    await enqueue_for_agent(
+        session,
+        agent=r,
+        job_id=job.id,
+        event_type="job.result_submitted",
+        payload=_job_event_payload(job, r, p, extra={"result": payload.result}),
+    )
     await session.commit()
     return {"id": str(job.id), "status": job.status.value}
 
@@ -184,6 +231,16 @@ async def approve_job(
     await jobs_repo.transition(session, job, JobStatus.completed)
     await reviews_repo.increment_jobs_completed(session, r)
     await reviews_repo.increment_jobs_completed(session, p)
+    await enqueue_for_agent(
+        session,
+        agent=p,
+        job_id=job.id,
+        event_type="job.completed",
+        payload=_job_event_payload(
+            job, r, p,
+            extra={"fee": str(breakdown.fee), "payee_received": str(breakdown.payee_receives)},
+        ),
+    )
     await session.commit()
     return {
         "id": str(job.id),
@@ -230,6 +287,13 @@ async def open_dispute(
 
     r = await _get_agent_by_id(session, job.requester_agent_id)
     p = await _get_agent_by_id(session, job.provider_agent_id)
+    dispute_payload = _job_event_payload(
+        job, r, p,
+        extra={"reason": payload.reason, "evidence": payload.evidence},
+    )
+    await enqueue_for_agent(session, agent=r, job_id=job.id, event_type="job.disputed", payload=dispute_payload)
+    await enqueue_for_agent(session, agent=p, job_id=job.id, event_type="job.disputed", payload=dispute_payload)
+
     if verdict.get("outcome") == "resolved":
         if verdict["winner"] == "requester":
             await ledger_repo.refund_escrow(session, r.did, job.price_amount, job.id)
@@ -250,6 +314,9 @@ async def open_dispute(
             await reviews_repo.increment_jobs_completed(session, r)
             await reviews_repo.increment_jobs_completed(session, p)
         await session.flush()
+        resolved_payload = _job_event_payload(job, r, p, extra={"verdict": verdict})
+        await enqueue_for_agent(session, agent=r, job_id=job.id, event_type="job.resolved", payload=resolved_payload)
+        await enqueue_for_agent(session, agent=p, job_id=job.id, event_type="job.resolved", payload=resolved_payload)
 
     await session.commit()
     return {
@@ -289,9 +356,6 @@ async def list_jobs(
         p = await _get_agent_by_id(session, job.provider_agent_id)
         out.append(jobs_repo.to_public_dict(job, r.did, p.did))
     return {"total": len(out), "jobs": out}
-
-
-# ─── Dev: deposit funds + check balance ────────────────────
 
 
 class DepositRequest(BaseModel):

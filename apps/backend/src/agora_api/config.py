@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     privy_app_id: str = ""
     privy_app_secret: str = ""
 
+    # Webhook signing (ADR 008): Ed25519 keypair for outbound webhooks.
+    agora_signing_private_key_b64: str = ""
+    agora_signing_key_id: str = "agora-local-dev"
+    webhook_max_attempts: int = 6
+    webhook_request_timeout_seconds: float = 10.0
+    webhook_worker_poll_interval_seconds: float = 5.0
+    webhook_worker_enabled: bool = True
+
     # Fee model (ADR 004): 1.0% with min 0.50 EUR and max 25 EUR
     fee_bps: int = 100
     fee_min_eur: Decimal = Decimal("0.50")

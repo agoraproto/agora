@@ -1,4 +1,4 @@
-"""Agora Python SDK – agent-first (ADR 006).
+"""Agora Python SDK - agent-first (ADR 006).
 
 Quickstart:
 
@@ -14,6 +14,13 @@ Quickstart:
 from .agent import Agent
 from .client import AgoraClient
 from .identity import AgentIdentity
+from .webhooks import SignatureInvalid, verify_request
 
-__version__ = "0.2.0"
-__all__ = ["Agent", "AgentIdentity", "AgoraClient"]
+__version__ = "0.3.0"
+__all__ = [
+    "Agent",
+    "AgentIdentity",
+    "AgoraClient",
+    "SignatureInvalid",
+    "verify_request",
+]
