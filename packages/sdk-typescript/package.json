@@ -1,6 +1,6 @@
 {
   "name": "@agora/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "TypeScript SDK for Agora - the agent-first AI marketplace protocol",
   "license": "MIT",
   "type": "module",
@@ -30,11 +30,20 @@
     "@noble/hashes": "^1.4.0",
     "ky": "^1.4.0"
   },
+  "peerDependencies": {
+    "viem": "^2.21.0"
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "eslint": "^9.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
+    "viem": "^2.21.0",
     "vitest": "^1.6.0"
   },
   "keywords": [
@@ -44,7 +53,10 @@
     "marketplace",
     "did",
     "ed25519",
-    "webhook"
+    "webhook",
+    "x402",
+    "usdc",
+    "base"
   ],
   "homepage": "https://agoraproto.org",
   "repository": {

@@ -76,11 +76,9 @@ jobs:
         run: pnpm test
 
   contracts-build:
-    name: Foundry contracts compile
+    name: Foundry contracts compile + test
     runs-on: ubuntu-latest
-    # Contracts sind in Bootstrap-Phase off-scope (ADR 003).
-    # Job darf aktuell scheitern, ohne CI komplett rot zu faerben.
-    continue-on-error: true
+    # Sprint 9: contracts are now required (USDC escrow on Base).
     defaults:
       run:
         working-directory: contracts
@@ -92,7 +90,7 @@ jobs:
         run: |
           mkdir -p lib
           git clone --depth 1 https://github.com/foundry-rs/forge-std lib/forge-std
-          git clone --depth 1 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
+          git clone --depth 1 --branch v5.0.2 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
       - name: Build
         run: forge build
       - name: Tests

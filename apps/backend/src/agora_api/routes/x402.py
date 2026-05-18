@@ -203,3 +203,61 @@ def _job_view(j: Job) -> dict[str, Any]:
         "settlement_mode": j.settlement_mode,
         "chain": j.chain,
     }
+
+
+class X402QuoteRequest(BaseModel):
+    provider_did: str
+    task: dict[str, Any] = Field(default_factory=dict)
+    budget_usdc: str = Field(..., description="Amount in USDC, decimal (e.g. '5.00')")
+
+
+@router.post(
+    "/quote",
+    summary="Get a price quote without committing to a job (no 402, no DB write)",
+)
+async def quote(
+    body: X402QuoteRequest,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Lightweight pricing oracle — agents call this to compare providers."""
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="on-chain settlement disabled")
+    provider = await agents_repo.get_by_did(session, body.provider_did)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="provider unknown")
+
+    amount = client.to_smallest_unit(Decimal(body.budget_usdc))
+    fee = await client.compute_fee(amount)
+    provider_payout = amount - fee
+
+    return {
+        "chain": settings.chain_name,
+        "chain_id": settings.chain_id,
+        "asset": {
+            "kind": "ERC20",
+            "address": settings.usdc_contract_address,
+            "symbol": "USDC",
+            "decimals": settings.usdc_decimals,
+        },
+        "budget": {
+            "smallest_unit": str(amount),
+            "human": body.budget_usdc,
+        },
+        "platform_fee": {
+            "smallest_unit": str(fee),
+            "human": str(client.from_smallest_unit(fee)),
+        },
+        "provider_payout": {
+            "smallest_unit": str(provider_payout),
+            "human": str(client.from_smallest_unit(provider_payout)),
+        },
+        "escrow_contract": settings.escrow_contract_address,
+        "provider": {
+            "did": provider.did,
+            "name": provider.name,
+            "payout_wallet": provider.payout_wallet,
+            "trust_level": provider.trust_level.value if hasattr(provider.trust_level, "value") else str(provider.trust_level),
+        },
+    }

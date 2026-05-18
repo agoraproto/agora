@@ -172,6 +172,60 @@ const TOOLS = [
       "replay window). Use to verify Agora is reachable before any other call.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "agora_x402_quote",
+    description:
+      "Get a USDC-denominated price quote for hiring a specific provider, " +
+      "including platform fee and provider payout. Read-only; does not " +
+      "create a job. Use to compare providers before committing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider_did: { type: "string" },
+        task: { type: "object", description: "Job spec; opaque to Agora." },
+        budget_usdc: { type: "string", description: "Decimal USDC, e.g. '2.50'." },
+      },
+      required: ["provider_did", "task", "budget_usdc"],
+    },
+  },
+  {
+    name: "agora_x402_payment_required",
+    description:
+      "Returns the on-chain payment instructions for hiring a provider. " +
+      "Two-phase flow: (1) call this to get contract address, USDC amount, " +
+      "taskHash, deadline; (2) you broadcast AgoraEscrow.createJob() on Base; " +
+      "(3) call agora_x402_confirm with the tx hash. " +
+      "The MCP server never sees the agent's private key.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        requester_did: { type: "string" },
+        provider_did: { type: "string" },
+        task: { type: "object" },
+        budget_usdc: { type: "string" },
+        deadline_seconds: { type: "integer", description: "Default 86400 (24h)." },
+      },
+      required: ["requester_did", "provider_did", "task", "budget_usdc"],
+    },
+  },
+  {
+    name: "agora_x402_confirm",
+    description:
+      "Confirm an on-chain payment by submitting the tx hash from " +
+      "AgoraEscrow.createJob(). Server verifies the receipt and creates the job.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        requester_did: { type: "string" },
+        provider_did: { type: "string" },
+        task: { type: "object" },
+        budget_usdc: { type: "string" },
+        deadline_unix: { type: "integer" },
+        tx_hash: { type: "string" },
+      },
+      required: ["requester_did", "provider_did", "task", "budget_usdc", "deadline_unix", "tx_hash"],
+    },
+  },
 ] as const;
 
 // ─── Tool implementations ──────────────────────────────
@@ -231,6 +285,61 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 
     case "agora_well_known": {
       return await api.get(".well-known/agora.json").json();
+    }
+
+    case "agora_x402_quote": {
+      return await api
+        .post("v1/x402/quote", {
+          json: {
+            provider_did: args.provider_did,
+            task: args.task,
+            budget_usdc: String(args.budget_usdc),
+          },
+        })
+        .json();
+    }
+
+    case "agora_x402_payment_required": {
+      const deadlineSeconds = Number(args.deadline_seconds ?? 86400);
+      const deadlineUnix = Math.floor(Date.now() / 1000) + deadlineSeconds;
+      const resp = await fetch(`${AGORA_BASE_URL}/v1/x402/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requester_did: args.requester_did,
+          provider_did: args.provider_did,
+          task: args.task,
+          budget_usdc: String(args.budget_usdc),
+          deadline_unix: deadlineUnix,
+        }),
+      });
+      if (resp.status !== 402) {
+        throw new Error(`expected 402, got ${resp.status}: ${await resp.text()}`);
+      }
+      const required = resp.headers.get("X-Payment-Required");
+      if (!required) throw new Error("X-Payment-Required header missing");
+      return { ...JSON.parse(required), deadline_unix: deadlineUnix };
+    }
+
+    case "agora_x402_confirm": {
+      const resp = await fetch(`${AGORA_BASE_URL}/v1/x402/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Payment-Tx": String(args.tx_hash),
+        },
+        body: JSON.stringify({
+          requester_did: args.requester_did,
+          provider_did: args.provider_did,
+          task: args.task,
+          budget_usdc: String(args.budget_usdc),
+          deadline_unix: args.deadline_unix,
+        }),
+      });
+      if (!resp.ok) {
+        throw new Error(`server rejected: ${resp.status} ${await resp.text()}`);
+      }
+      return await resp.json();
     }
 
     default:
