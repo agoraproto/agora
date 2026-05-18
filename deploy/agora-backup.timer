@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Agora backup at 03:30
+Requires=agora-backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

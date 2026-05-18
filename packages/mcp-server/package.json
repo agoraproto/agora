@@ -1,0 +1,51 @@
+{
+  "name": "@agora/mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Agora - exposes the agent marketplace as a tool for Claude/GPT/Cursor/etc.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "agora-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@agora/sdk": "workspace:^",
+    "ky": "^1.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agora",
+    "agent",
+    "ai",
+    "marketplace",
+    "claude",
+    "cursor"
+  ],
+  "homepage": "https://agoraproto.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agoraproto/agora",
+    "directory": "packages/mcp-server"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

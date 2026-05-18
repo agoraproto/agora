@@ -1,0 +1,11 @@
+[Unit]
+Description=Agora Postgres backup (one-shot)
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/agora/scripts/backup.sh
+StandardOutput=journal
+StandardError=journal

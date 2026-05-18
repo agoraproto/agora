@@ -1,12 +1,22 @@
 {
   "name": "@agora/sdk",
-  "version": "0.1.0",
-  "description": "TypeScript SDK for the Agora AI agent marketplace",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "version": "0.3.0",
+  "description": "TypeScript SDK for Agora - the agent-first AI marketplace protocol",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
@@ -16,6 +26,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.4.0",
     "ky": "^1.4.0"
   },
   "devDependencies": {
@@ -24,6 +36,21 @@
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
+  },
+  "keywords": [
+    "agora",
+    "agent",
+    "ai",
+    "marketplace",
+    "did",
+    "ed25519",
+    "webhook"
+  ],
+  "homepage": "https://agoraproto.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agoraproto/agora",
+    "directory": "packages/sdk-typescript"
   },
   "publishConfig": {
     "access": "public"

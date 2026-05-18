@@ -6,17 +6,19 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import agents_repo, disputes_repo, jobs_repo, ledger_repo, reviews_repo
 from ..db.base import get_session
 from ..db.jobs_repo import IllegalTransition
 from ..db.ledger_repo import InsufficientFunds
 from ..db.models import Agent, Job, JobStatus
 from ..pricing import compute_fee
+from ..rate_limit import limiter
 from ..webhooks.delivery import enqueue_for_agent
 
 router = APIRouter()
@@ -79,7 +81,9 @@ def _job_event_payload(
 
 
 @router.post("", summary="Create a new job offer with escrow", status_code=status.HTTP_201_CREATED)
+@limiter.limit(lambda: get_settings().rate_limit_create_job)
 async def create_job(
+    request: Request,
     payload: JobCreateRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
@@ -251,7 +255,9 @@ async def approve_job(
 
 
 @router.post("/{job_id}/dispute", summary="Open a dispute; runs Stage-1 code-as-judge")
+@limiter.limit(lambda: get_settings().rate_limit_open_dispute)
 async def open_dispute(
+    request: Request,
     job_id: str,
     payload: DisputePayload,
     raised_by_did: str | None = None,

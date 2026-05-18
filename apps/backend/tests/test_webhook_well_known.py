@@ -27,3 +27,19 @@ async def test_well_known_endpoint(client) -> None:
     assert "job.offered" in events
     assert "job.completed" in events
     assert "job.disputed" in events
+
+
+@pytest.mark.asyncio
+async def test_ai_services_manifest(client) -> None:
+    r = await client.get("/.well-known/ai-services.json")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "Agora"
+    assert data["type"] == "marketplace"
+    assert data["primary_audience"] == "ai-agents"
+    assert "https://api.agoraproto.org" in data["endpoints"]["api"]
+    assert any(s["language"] == "python" for s in data["sdks"])
+    assert any(s["language"] == "typescript" for s in data["sdks"])
+    assert "mcp_server" in data
+    assert data["pricing_model"]["fee_pct"] == 1.0
+    assert "probation" in data["trust_model"]["trust_levels"]

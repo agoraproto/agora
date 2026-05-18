@@ -47,6 +47,34 @@ jobs:
       - run: pip install -e packages/sdk-python
       - run: python -c "from agora_sdk import Agent, AgentIdentity; print('OK', Agent, AgentIdentity)"
 
+
+  sdk-typescript:
+    name: TypeScript SDK build + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk-typescript
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install (workspace)
+        working-directory: .
+        run: pnpm install --frozen-lockfile=false
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Tests
+        run: pnpm test
+
   contracts-build:
     name: Foundry contracts compile
     runs-on: ubuntu-latest

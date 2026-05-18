@@ -1,0 +1,283 @@
+#!/usr/bin/env node
+/**
+ * Agora MCP Server.
+ *
+ * Exposes Agora as a Model Context Protocol tool, so any MCP-aware client
+ * (Claude Desktop, Cursor, Cline, Continue, ...) can call into the
+ * marketplace directly - find providers, hire, pay, retrieve results -
+ * without any client-side glue code.
+ *
+ * Run via Claude Desktop config:
+ *   {
+ *     "mcpServers": {
+ *       "agora": {
+ *         "command": "npx",
+ *         "args": ["-y", "@agora/mcp"],
+ *         "env": { "AGORA_BASE_URL": "https://api.agoraproto.org" }
+ *       }
+ *     }
+ *   }
+ *
+ * Or globally: `npm i -g @agora/mcp` then point command to `agora-mcp`.
+ *
+ * Auth model: the MCP server reads `AGORA_AGENT_SECRET` from env (a base64
+ * Ed25519 private key, see @agora/sdk's AgentIdentity.exportSecret). If set,
+ * it identifies the calling agent. If not, only read-only tools work
+ * (search, get_agent, stats).
+ */
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import ky, { type KyInstance } from "ky";
+
+const AGORA_BASE_URL = process.env.AGORA_BASE_URL ?? "https://api.agoraproto.org";
+const AGORA_AGENT_DID = process.env.AGORA_AGENT_DID;
+
+const api: KyInstance = ky.create({
+  prefixUrl: AGORA_BASE_URL,
+  timeout: 30_000,
+});
+
+// ─── Tool definitions ──────────────────────────────────
+
+const TOOLS = [
+  {
+    name: "agora_search",
+    description:
+      "Search the Agora marketplace for agents that can perform a capability. " +
+      "Use this when the user (or the calling LLM) needs a specialized skill: " +
+      "translation, fact-checking, code review, image generation, etc. " +
+      "Returns up to 50 providers with their DID, name, pricing, and trust level.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        capability: {
+          type: "string",
+          description:
+            "What the agent should be able to do, e.g. 'Translation', 'FactCheck', 'CodeReview'.",
+        },
+        text: {
+          type: "string",
+          description: "Free-text filter applied to agent name/description.",
+        },
+        max_price: {
+          type: "string",
+          description: "Maximum acceptable base_price in EURC (decimal string).",
+        },
+        min_trust: {
+          type: "string",
+          enum: ["probation", "new", "verified", "trusted"],
+          description: "Only return agents with at least this trust level.",
+        },
+      },
+    },
+  },
+  {
+    name: "agora_quote",
+    description:
+      "Calculate the fee Agora charges for a transaction of a given amount. " +
+      "Fee is 1% of the price, minimum 0.50 EUR, maximum 25 EUR. " +
+      "Use this BEFORE creating a job to show the user the true cost.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        amount: {
+          type: "string",
+          description: "The amount to be paid to the provider, in EUR (decimal string).",
+        },
+      },
+      required: ["amount"],
+    },
+  },
+  {
+    name: "agora_get_agent",
+    description:
+      "Fetch full details of a specific Agora agent by DID, including " +
+      "capabilities, pricing, reputation, completed jobs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        did: {
+          type: "string",
+          description: "The agent's DID, e.g. did:agora:xyz...",
+        },
+      },
+      required: ["did"],
+    },
+  },
+  {
+    name: "agora_stats",
+    description:
+      "Get marketplace-wide statistics: total active agents, total jobs, " +
+      "completed jobs, platform revenue. Useful to gauge whether Agora is " +
+      "the right place to look for a capability.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "agora_get_job",
+    description:
+      "Look up the current status of a job by job_id (UUID). " +
+      "Status values: offered, accepted, in_progress, submitted, completed, " +
+      "disputed, cancelled, refunded.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Job UUID returned by agora_hire." },
+      },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "agora_hire",
+    description:
+      "Create a job offer to a provider. Locks the budget in escrow. " +
+      "REQUIRES the calling agent's DID to be set via AGORA_AGENT_DID env var. " +
+      "The provider's webhook will fire; you can then poll agora_get_job until " +
+      "status='submitted', then call agora_approve to release payment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider_did: { type: "string", description: "The provider's DID." },
+        task: {
+          type: "object",
+          description: "Free-form task description, sent to the provider verbatim.",
+        },
+        budget: {
+          type: "string",
+          description: "Amount to pay in EUR (decimal string).",
+        },
+      },
+      required: ["provider_did", "task", "budget"],
+    },
+  },
+  {
+    name: "agora_approve",
+    description:
+      "Approve a submitted job, releasing escrow to the provider. " +
+      "Only call this if the result is acceptable. To reject, call agora_dispute instead.",
+    inputSchema: {
+      type: "object",
+      properties: { job_id: { type: "string", description: "Job UUID." } },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "agora_well_known",
+    description:
+      "Fetch Agora's public metadata (signing key, supported webhook events, " +
+      "replay window). Use to verify Agora is reachable before any other call.",
+    inputSchema: { type: "object", properties: {} },
+  },
+] as const;
+
+// ─── Tool implementations ──────────────────────────────
+
+async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  switch (name) {
+    case "agora_search": {
+      const params = new URLSearchParams();
+      if (args.capability) params.set("capability", String(args.capability));
+      if (args.text) params.set("text", String(args.text));
+      if (args.max_price) params.set("max_price", String(args.max_price));
+      if (args.min_trust) params.set("min_trust", String(args.min_trust));
+      return await api.get("v1/search", { searchParams: params }).json();
+    }
+
+    case "agora_quote": {
+      return await api
+        .post("v1/payments/quote", { json: { amount: String(args.amount) } })
+        .json();
+    }
+
+    case "agora_get_agent": {
+      return await api.get(`v1/agents/${encodeURIComponent(String(args.did))}`).json();
+    }
+
+    case "agora_stats": {
+      return await api.get("v1/stats").json();
+    }
+
+    case "agora_get_job": {
+      return await api.get(`v1/jobs/${String(args.job_id)}`).json();
+    }
+
+    case "agora_hire": {
+      if (!AGORA_AGENT_DID) {
+        throw new Error(
+          "agora_hire requires AGORA_AGENT_DID env var. " +
+            "Register an agent first via @agora/sdk's Agent.bootstrap() and " +
+            "set AGORA_AGENT_DID to the resulting DID.",
+        );
+      }
+      return await api
+        .post("v1/jobs", {
+          json: {
+            requester_did: AGORA_AGENT_DID,
+            provider_did: args.provider_did,
+            task: args.task,
+            budget: String(args.budget),
+          },
+        })
+        .json();
+    }
+
+    case "agora_approve": {
+      return await api.post(`v1/jobs/${String(args.job_id)}/approve`).json();
+    }
+
+    case "agora_well_known": {
+      return await api.get(".well-known/agora.json").json();
+    }
+
+    default:
+      throw new Error(`unknown tool: ${name}`);
+  }
+}
+
+// ─── Server bootstrap ──────────────────────────────────
+
+async function main() {
+  const server = new Server(
+    { name: "agora-mcp", version: "0.1.0" },
+    { capabilities: { tools: {} } },
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: TOOLS as unknown as Array<{
+      name: string;
+      description: string;
+      inputSchema: object;
+    }>,
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    try {
+      const result = await callTool(name, (args ?? {}) as Record<string, unknown>);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        content: [{ type: "text", text: `Error: ${msg}` }],
+        isError: true,
+      };
+    }
+  });
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
+  // eslint-disable-next-line no-console
+  console.error(`[agora-mcp] connected to ${AGORA_BASE_URL}`);
+}
+
+main().catch((e) => {
+  console.error("[agora-mcp] fatal:", e);
+  process.exit(1);
+});

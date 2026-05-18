@@ -1,81 +1,37 @@
 /**
- * Agora TypeScript SDK
+ * @agora/sdk - TypeScript SDK for Agora
  *
- * Target API (Spec §8.2):
+ * The agent-first AI marketplace protocol. https://agoraproto.org
  *
- *   import { AgoraClient } from "@agora/sdk";
- *   const client = new AgoraClient({ did, privateKey });
- *   const results = await client.search({ capability: "LegalTranslation" });
- *   const job = await client.createJob({ provider: results[0].did, task, budget });
+ * Quickstart:
  *
- * NOTE: This is a stub. Signing, webhook verification, and retry handling are TBD.
+ *   import { Agent } from "@agora/sdk";
+ *
+ *   const me = await Agent.bootstrap({
+ *     name: "my-agent",
+ *     capabilities: ["Translation"],
+ *     pricing: { model: "per_request", currency: "EURC", base_price: "0.50" },
+ *     stake: "25.00",
+ *   });
+ *   console.log(me.did);
+ *
+ * Webhook receiver verification:
+ *
+ *   import { verifyRequest } from "@agora/sdk";
+ *   await verifyRequest(AGORA_PUBKEY, signature, timestamp, bodyBytes);
  */
 
-import ky from "ky";
+export { Agent, type BootstrapOptions, type CreateJobInput } from "./agent.js";
+export {
+  AgoraClient,
+  type AgoraClientOptions,
+  type AgentMatch,
+  type SearchOptions,
+  type JobCreateRequest,
+  type Job,
+  type Stats,
+} from "./client.js";
+export { AgentIdentity, type DidDocument, type DidDocumentService } from "./identity.js";
+export { verifyRequest, SignatureInvalid } from "./webhooks.js";
 
-export interface AgoraClientOptions {
-  did: string;
-  privateKey: Uint8Array | string;
-  baseUrl?: string;
-  timeout?: number;
-}
-
-export interface AgentMatch {
-  did: string;
-  name: string;
-  score: number;
-  pricing: Record<string, unknown>;
-}
-
-export interface SearchOptions {
-  capability?: string;
-  maxPrice?: number;
-  minReputation?: number;
-  region?: string;
-}
-
-export interface CreateJobOptions {
-  provider: string;
-  task: Record<string, unknown>;
-  budget: number;
-}
-
-export class AgoraClient {
-  private readonly api: typeof ky;
-  public readonly did: string;
-
-  constructor(opts: AgoraClientOptions) {
-    this.did = opts.did;
-    this.api = ky.create({
-      prefixUrl: opts.baseUrl ?? "http://localhost:8000",
-      timeout: opts.timeout ?? 30_000,
-    });
-  }
-
-  async search(opts: SearchOptions = {}): Promise<AgentMatch[]> {
-    const searchParams = new URLSearchParams();
-    if (opts.capability) searchParams.set("capability", opts.capability);
-    if (opts.maxPrice !== undefined) searchParams.set("max_price", String(opts.maxPrice));
-    if (opts.minReputation !== undefined) searchParams.set("min_reputation", String(opts.minReputation));
-    if (opts.region) searchParams.set("region", opts.region);
-
-    const data = await this.api
-      .get("v1/search", { searchParams })
-      .json<{ matches: AgentMatch[] }>();
-    return data.matches ?? [];
-  }
-
-  async createJob(opts: CreateJobOptions): Promise<Record<string, unknown>> {
-    return await this.api
-      .post("v1/jobs", {
-        json: {
-          provider_did: opts.provider,
-          task: opts.task,
-          budget: opts.budget,
-        },
-      })
-      .json<Record<string, unknown>>();
-  }
-}
-
-export const VERSION = "0.1.0";
+export const VERSION = "0.3.0";

@@ -6,9 +6,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .config import get_settings
 from .logging import configure_logging, get_logger
+from .rate_limit import limiter
 from .routes import agents, health, jobs, payments, reviews, search, stats, well_known
 from .webhooks.delivery import worker_loop
 
@@ -46,9 +49,27 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# ─── Rate-Limiting (slowapi) ────────────────────────────
+# Limits are per-route; see .rate_limit and per-route decorators.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ─── CORS ────────────────────────────────────────────────
+# Public endpoints (/.well-known, /v1/search, /v1/stats, /v1/agents) are
+# read-only and benefit from being callable from any origin (third-party
+# dashboards, AI crawlers, marketplaces). State-changing endpoints rely on
+# signed payloads + DID auth in future iterations, not on CORS.
+ALLOWED_ORIGINS: list[str] | str = ["*"]
+if settings.app_env in ("staging", "production"):
+    ALLOWED_ORIGINS = [
+        "https://agoraproto.org",
+        "https://www.agoraproto.org",
+        "https://api.agoraproto.org",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

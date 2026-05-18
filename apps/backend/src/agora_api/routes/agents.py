@@ -9,13 +9,15 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import agents_repo
 from ..db.base import get_session
+from ..rate_limit import limiter
 
 router = APIRouter()
 
@@ -56,7 +58,9 @@ class AgentRegisterResponse(BaseModel):
     response_model=AgentRegisterResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit(lambda: get_settings().rate_limit_register)
 async def register_agent(
+    request: Request,
     payload: AgentRegisterRequest,
     session: AsyncSession = Depends(get_session),
 ) -> AgentRegisterResponse:

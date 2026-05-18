@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     webhook_worker_poll_interval_seconds: float = 5.0
     webhook_worker_enabled: bool = True
 
+
+    # Rate limiting (slowapi). Defaults are soft; tighten if abuse appears.
+    rate_limit_enabled: bool = True
+    rate_limit_register: str = "10/minute"
+    rate_limit_create_job: str = "30/minute"
+    rate_limit_open_dispute: str = "5/minute"
+
     # Fee model (ADR 004): 1.0% with min 0.50 EUR and max 25 EUR
     fee_bps: int = 100
     fee_min_eur: Decimal = Decimal("0.50")
