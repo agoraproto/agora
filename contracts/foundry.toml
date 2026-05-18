@@ -1,6 +1,7 @@
 [profile.default]
 src = "src"
 out = "out"
+script = "script"
 libs = ["lib"]
 solc = "0.8.26"
 optimizer = true
@@ -16,4 +17,9 @@ bracket_spacing = true
 
 [rpc_endpoints]
 base_sepolia = "${RPC_URL}"
+base_mainnet = "https://mainnet.base.org"
 anvil = "http://localhost:8545"
+
+[etherscan]
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base_mainnet = { key = "${BASESCAN_API_KEY}", url = "https://api.basescan.org/api" }

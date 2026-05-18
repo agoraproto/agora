@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .config import get_settings
 from .logging import configure_logging, get_logger
 from .rate_limit import limiter
-from .routes import agents, health, jobs, payments, reviews, search, stats, well_known
+from .routes import agents, health, jobs, payments, reviews, search, stats, well_known, x402
 from .webhooks.delivery import worker_loop
 
 settings = get_settings()
@@ -79,6 +79,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(agents.router, prefix="/v1/agents", tags=["agents"])
 app.include_router(search.router, prefix="/v1", tags=["discovery"])
 app.include_router(jobs.router, prefix="/v1/jobs", tags=["jobs"])
+app.include_router(x402.router, prefix="/v1/x402", tags=["x402"])
 app.include_router(payments.router, prefix="/v1/payments", tags=["payments"])
 app.include_router(reviews.router, prefix="/v1", tags=["reputation"])
 app.include_router(stats.router, prefix="/v1", tags=["stats"])

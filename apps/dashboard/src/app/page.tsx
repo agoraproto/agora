@@ -1,4 +1,6 @@
 import { LoginButton } from "@/components/LoginButton";
+import { WalletPanel } from "@/components/WalletPanel";
+import { HirePanel } from "@/components/HirePanel";
 
 async function fetchStats() {
   const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -74,6 +76,9 @@ export default async function Home() {
         </div>
         <LoginButton />
       </header>
+
+      <WalletPanel />
+      <HirePanel />
 
       <section style={sectionStyle}>
         <h2 style={{ fontSize: "1.1rem", color: "#bbb" }}>Marketplace</h2>

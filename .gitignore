@@ -66,3 +66,12 @@ htmlcov/
 
 # Docker volumes
 docker-volumes/
+
+# Sprint 9: Foundry deps + temp files
+contracts/lib/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/.env
+apps/dashboard/tsconfig.tsbuildinfo
+_tmp_*

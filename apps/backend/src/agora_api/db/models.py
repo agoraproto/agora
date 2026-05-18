@@ -149,6 +149,8 @@ class Agent(Base, TimestampMixin):
 
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus, native_enum=False), default=AgentStatus.active)
+    # EVM address (0x...) where on-chain escrow releases pay out.
+    payout_wallet: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     reputation_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     reputation_count: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -188,6 +190,12 @@ class Job(Base, TimestampMixin):
     price_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
     price_currency: Mapped[str] = mapped_column(String(8), default="EURC")
     escrow_tx_hash: Mapped[str | None] = mapped_column(Text)
+    release_tx_hash: Mapped[str | None] = mapped_column(Text)
+    # uint256 jobId returned by AgoraEscrow.createJob(); Numeric(78,0) fits 2**256.
+    onchain_job_id: Mapped[Decimal | None] = mapped_column(Numeric(78, 0), index=True)
+    # "offchain" = ledger-only (bootstrap mode); "onchain" = settled via AgoraEscrow.
+    settlement_mode: Mapped[str] = mapped_column(String(16), default="offchain", nullable=False)
+    chain: Mapped[str] = mapped_column(String(32), default="none", nullable=False)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -20,6 +20,8 @@ dependencies = [
     "PyNaCl>=1.5.0",
     "typesense>=0.21.0",
     "qdrant-client>=1.10.0",
+    "web3>=7.0.0",
+    "eth-account>=0.13.0",
 ]
 
 [project.optional-dependencies]

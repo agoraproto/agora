@@ -33,9 +33,16 @@ class Settings(BaseSettings):
     # Blockchain (off-chain ledger in bootstrap phase)
     enable_onchain_payments: bool = False
     chain_id: int = 84532  # Base Sepolia
+    chain_name: str = "base-sepolia"
     rpc_url: str = "https://sepolia.base.org"
     escrow_contract_address: str = ""
+    # USDC: Base Sepolia 0x036CbD53842c5426634e7929541eC2318f3dCF7e,
+    # Base Mainnet 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
     usdc_contract_address: str = ""
+    usdc_decimals: int = 6
+    # Agora-owned wallet that signs createJob/release/refund when the
+    # platform settles on behalf of an agent (e.g. via x402).
+    agora_settler_private_key: str = ""
 
     # Auth / Custody (Privy - ADR 005)
     privy_app_id: str = ""
@@ -48,7 +55,6 @@ class Settings(BaseSettings):
     webhook_request_timeout_seconds: float = 10.0
     webhook_worker_poll_interval_seconds: float = 5.0
     webhook_worker_enabled: bool = True
-
 
     # Rate limiting (slowapi). Defaults are soft; tighten if abuse appears.
     rate_limit_enabled: bool = True

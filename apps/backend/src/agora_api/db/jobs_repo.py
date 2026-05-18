@@ -17,6 +17,12 @@ async def get(session: AsyncSession, job_id: uuid.UUID) -> Job | None:
     return await session.get(Job, job_id)
 
 
+async def find_by_escrow_tx(session: AsyncSession, tx_hash: str) -> Job | None:
+    """Look up a job by on-chain escrow transaction hash (idempotency key)."""
+    stmt = select(Job).where(Job.escrow_tx_hash == tx_hash)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def create(
     session: AsyncSession,
     *,
