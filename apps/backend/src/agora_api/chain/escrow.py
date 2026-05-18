@@ -316,7 +316,7 @@ class AgoraEscrowClient:
             try:
                 parsed = evt.process_log(log_entry)
                 return int(parsed["args"]["jobId"])
-            except Exception:  # noqa: BLE001 — log may be from another contract
+            except Exception:  # log may be from another contract
                 continue
         raise RuntimeError("JobCreated event not found in receipt")
 

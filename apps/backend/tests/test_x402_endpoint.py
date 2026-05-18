@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agora_api.chain import escrow as escrow_module
 from agora_api.config import get_settings
 from agora_api.db.models import Agent, AgentStatus, AgentType, TrustLevel
 from agora_api.routes import x402 as x402_module

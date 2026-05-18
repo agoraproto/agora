@@ -84,7 +84,7 @@ export interface QuoteArgs {
 }
 
 export async function quote(args: QuoteArgs): Promise<Record<string, unknown>> {
-  return await ky
+  return (await ky
     .post(`${args.baseUrl.replace(/\/$/, "")}/v1/x402/quote`, {
       json: {
         provider_did: args.providerDid,
@@ -93,7 +93,7 @@ export async function quote(args: QuoteArgs): Promise<Record<string, unknown>> {
       },
       timeout: 10_000,
     })
-    .json();
+    .json()) as Record<string, unknown>;
 }
 
 export interface HireWithX402Args {
@@ -190,7 +190,7 @@ export async function hireWithX402(
   if (!confirmed.ok) {
     throw new Error(`server rejected: ${confirmed.status} ${await confirmed.text()}`);
   }
-  return await confirmed.json();
+  return (await confirmed.json()) as Record<string, unknown>;
 }
 
 async function loadViem(): Promise<{

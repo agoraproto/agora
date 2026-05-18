@@ -152,7 +152,7 @@ async def create_x402_job(
             break
         except HTTPException:
             raise
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
     if onchain_job_id is None:
         raise HTTPException(status_code=402, detail="JobCreated event missing")
@@ -258,6 +258,10 @@ async def quote(
             "did": provider.did,
             "name": provider.name,
             "payout_wallet": provider.payout_wallet,
-            "trust_level": provider.trust_level.value if hasattr(provider.trust_level, "value") else str(provider.trust_level),
+            "trust_level": (
+                provider.trust_level.value
+                if hasattr(provider.trust_level, "value")
+                else str(provider.trust_level)
+            ),
         },
     }
