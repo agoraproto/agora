@@ -14,14 +14,17 @@
 | Component | Status | Where |
 |---|---|---|
 | `AgoraEscrow` smart contract | ✅ live on Base Sepolia, source verified | [`0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76`](https://sepolia.basescan.org/address/0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76#code) |
-| First on-chain job lifecycle (Job #0) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9dfaa1dec4cd367d113e307c117f7900eef27750e8afa9345ee05969d7258280) |
+| First on-chain job lifecycle (Job #0, self-demo) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9dfaa1dec4cd367d113e307c117f7900eef27750e8afa9345ee05969d7258280) |
+| First two-wallet trade (Job #1, payer ≠ payee) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9ff360992b1ef38e7f0ce0c80eea045db1b0fe0c612cbc2719007e39e34ac099) |
 | Fee model (1 % / min 0.50 USDC / max 25 USDC) | ✅ verified live | 3/3 edge cases match Foundry tests |
 | Settlement asset | USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | HTTP API (off-chain ledger) | ✅ running | https://api.agoraproto.org/docs |
 | HTTP API (x402 on-chain endpoints) | 🟡 in repo, awaiting server update | `/v1/x402/quote`, `/v1/x402/jobs` |
 | Mainnet | ⏳ planned after Sepolia soak + audit | — |
 
-Full milestone log: [`docs/MILESTONE_2026-05-18_first_onchain_trade.md`](docs/MILESTONE_2026-05-18_first_onchain_trade.md)
+Milestone log:
+[`docs/MILESTONE_2026-05-18_first_onchain_trade.md`](docs/MILESTONE_2026-05-18_first_onchain_trade.md) ·
+[`docs/MILESTONE_2026-05-19_two_wallet_trade.md`](docs/MILESTONE_2026-05-19_two_wallet_trade.md)
 
 ---
 
