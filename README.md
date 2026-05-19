@@ -13,7 +13,7 @@
 
 | Component | Status | Where |
 |---|---|---|
-| `AgoraEscrow` smart contract | ✅ live on Base Sepolia | [`0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76`](https://sepolia.basescan.org/address/0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76) |
+| `AgoraEscrow` smart contract | ✅ live on Base Sepolia, source verified | [`0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76`](https://sepolia.basescan.org/address/0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76#code) |
 | First on-chain job lifecycle (Job #0) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9dfaa1dec4cd367d113e307c117f7900eef27750e8afa9345ee05969d7258280) |
 | Fee model (1 % / min 0.50 USDC / max 25 USDC) | ✅ verified live | 3/3 edge cases match Foundry tests |
 | Settlement asset | USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |

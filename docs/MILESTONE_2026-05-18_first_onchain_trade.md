@@ -81,8 +81,11 @@ All three match the Foundry unit-test expectations exactly.
 - **Second-wallet smoke test:** generate a second EOA, set it as
   `payout_wallet` for an existing provider agent (e.g. echo-agent),
   run a 1 USDC trade with three distinct parties.
-- **BaseScan verification:** publish the contract source so anybody
-  can inspect it from the explorer without checking out the repo.
+- **BaseScan verification:** ✅ done 2026-05-19. Source code of
+  `AgoraEscrow.sol` is now published at
+  https://sepolia.basescan.org/address/0xce783b527c83c4ffff3d3565c0f3c3204be02b76#code
+  — anybody can inspect functions, read state, and call write
+  methods directly from the explorer.
 
 ## Posting copy (draft, for whenever the API catches up)
 
