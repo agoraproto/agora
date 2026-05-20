@@ -272,6 +272,117 @@ class Dispute(Base, TimestampMixin):
     resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class ListingKind(str, enum.Enum):
+    """What kind of seller a Listing belongs to."""
+
+    agent = "agent"
+    user = "user"
+
+
+class ListingType(str, enum.Enum):
+    """A Listing is either a service offer or a pre-computed digital product.
+
+    `service`: when bought, a Job is created from the listing's spec; the
+    seller (agent or human) fulfills it via the usual submitResult flow.
+
+    `digital_product`: when bought, the listing's pre-computed
+    `digital_content` is delivered to the buyer immediately on
+    `approveAndPay`. No work performed at sale time.
+    """
+
+    service = "service"
+    digital_product = "digital_product"
+
+
+class ListingStatus(str, enum.Enum):
+    active = "active"     # visible in search, buyable
+    paused = "paused"     # hidden from search, existing orders unaffected
+    archived = "archived" # gone from search forever; preserved for receipts
+
+
+class Listing(Base, TimestampMixin):
+    """A marketplace listing — Sprint 10 / Etsy-for-AI direction.
+
+    A Listing is offered by either an Agent (via SDK) or a human User
+    (via web login). Pricing is USDC-denominated and paid through the
+    same x402 escrow flow as Jobs.
+
+    Service listings are essentially Job-templates: buying creates a
+    Job whose task_spec the buyer fills in per `service_input_schema`.
+
+    Digital-product listings carry their deliverable in
+    `digital_content`. Buying triggers an x402 flow that, on approval,
+    releases the content to the buyer's order record. No background
+    work between hire and approve — the result is the same every time.
+    """
+
+    __tablename__ = "listings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+
+    # ── Seller ──
+    seller_kind: Mapped[ListingKind] = mapped_column(
+        Enum(ListingKind, native_enum=False), nullable=False, index=True
+    )
+    # DID of the agent or user offering this listing. Stored as a string
+    # (not a FK) so a single column can reference both `agents.did` and
+    # `users.did`. The API layer validates that the DID exists.
+    seller_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # EVM address that receives the USDC payout on approval.
+    payout_wallet: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # ── What it is ──
+    listing_type: Mapped[ListingType] = mapped_column(
+        Enum(ListingType, native_enum=False), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Free-form taxonomy. Suggested values: 'translation', 'image-gen',
+    # 'code-review', 'fact-check', 'data-analysis', 'prompts',
+    # 'datasets', 'templates', 'tutorials', 'custom-gpts'.
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="other", index=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    # ── Pricing (USDC) ──
+    price_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    price_currency: Mapped[str] = mapped_column(String(8), default="USDC", nullable=False)
+
+    # ── Service-specific ──
+    # The capability tag a service performs (e.g. 'Translation'). Empty for
+    # digital products. Used for capability-based search.
+    service_capability: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # JSON Schema (or just a plain dict) describing what the buyer must
+    # provide as the task spec when they hire. Empty for digital products.
+    service_input_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # ── Digital-product specific ──
+    # MIME-ish type of the deliverable, for the UI to render correctly:
+    # 'text/plain', 'text/markdown', 'application/json', 'file_url',
+    # 'ipfs_cid'. Empty for services.
+    digital_content_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The deliverable payload. Format depends on `digital_content_type`.
+    # For 'text/markdown' it's {"text": "..."}; for 'file_url' it's
+    # {"url": "https://...", "filename": "..."}; etc.
+    digital_content: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # ── Presentation ──
+    cover_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    images: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    # ── State ──
+    status: Mapped[ListingStatus] = mapped_column(
+        Enum(ListingStatus, native_enum=False),
+        default=ListingStatus.active,
+        nullable=False,
+        index=True,
+    )
+
+    # ── Stats (denormalised; updated on each completed order) ──
+    sales_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    rating_score: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    rating_count: Mapped[int] = mapped_column(default=0, nullable=False)
+
+
 class WebhookDelivery(Base, TimestampMixin):
     """Persistent webhook delivery queue (Sprint 6 / ADR 008)."""
 
