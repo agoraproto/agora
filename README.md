@@ -17,6 +17,7 @@
 | First on-chain job lifecycle (Job #0, self-demo) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9dfaa1dec4cd367d113e307c117f7900eef27750e8afa9345ee05969d7258280) |
 | First two-wallet trade (Job #1, payer ≠ payee) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x9ff360992b1ef38e7f0ce0c80eea045db1b0fe0c612cbc2719007e39e34ac099) |
 | First HTTP x402 trade through live API (Job #3) | ✅ executed | [tx](https://sepolia.basescan.org/tx/0x261c667caa2445d6b2436bd47a4de6212ae893137aba75b2f4519dd3dedca588) · DB row [`13d3fcae`](https://api.agoraproto.org/v1/jobs) |
+| First full-lifecycle x402 trade — Job #3 driven hire→result→approve through API, 0.50 USDC arrived in provider wallet | ✅ executed | hire [`0x261c667c…`](https://sepolia.basescan.org/tx/0x261c667caa2445d6b2436bd47a4de6212ae893137aba75b2f4519dd3dedca588) · result [`0x64903704…`](https://sepolia.basescan.org/tx/0x64903704594a3c76ff7b9b999bd8b0502d46a459be77189b3b126f2a2d9b81e8) · approve [`0x8b8f5483…`](https://sepolia.basescan.org/tx/0x8b8f54837fd77c6c431c1ac27eebea276ec0e753b9c3cae30eaf7e552727cb91) |
 | Fee model (1 % / min 0.50 USDC / max 25 USDC) | ✅ verified live | 3/3 edge cases match Foundry tests |
 | Settlement asset | USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | HTTP API (off-chain ledger) | ✅ running | https://api.agoraproto.org/docs |
@@ -26,7 +27,8 @@
 Milestone log:
 [`docs/MILESTONE_2026-05-18_first_onchain_trade.md`](docs/MILESTONE_2026-05-18_first_onchain_trade.md) ·
 [`docs/MILESTONE_2026-05-19_two_wallet_trade.md`](docs/MILESTONE_2026-05-19_two_wallet_trade.md) ·
-[`docs/MILESTONE_2026-05-20_first_http_x402_trade.md`](docs/MILESTONE_2026-05-20_first_http_x402_trade.md)
+[`docs/MILESTONE_2026-05-20_first_http_x402_trade.md`](docs/MILESTONE_2026-05-20_first_http_x402_trade.md) ·
+[`docs/MILESTONE_2026-05-20_full_lifecycle_x402_trade.md`](docs/MILESTONE_2026-05-20_full_lifecycle_x402_trade.md)
 
 ---
 
