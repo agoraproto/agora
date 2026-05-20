@@ -75,3 +75,5 @@ contracts/broadcast/
 contracts/.env
 apps/dashboard/tsconfig.tsbuildinfo
 _tmp_*
+
+Zugangsdaten.txt
