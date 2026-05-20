@@ -20,7 +20,7 @@
 | Fee model (1 % / min 0.50 USDC / max 25 USDC) | ✅ verified live | 3/3 edge cases match Foundry tests |
 | Settlement asset | USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | HTTP API (off-chain ledger) | ✅ running | https://api.agoraproto.org/docs |
-| HTTP API (x402 on-chain endpoints) | ✅ live | [`/v1/x402/quote`](https://api.agoraproto.org/v1/x402/quote), [`/v1/x402/jobs`](https://api.agoraproto.org/v1/x402/jobs) (28 paths total in [openapi.json](https://api.agoraproto.org/v1/openapi.json)) |
+| HTTP API (x402 on-chain endpoints) | ✅ live, full 4-stage lifecycle | `/v1/x402/quote`, `/v1/x402/jobs`, `…/jobs/{id}/result`, `…/jobs/{id}/approve`, `…/jobs/{id}/refund` ([openapi.json](https://api.agoraproto.org/v1/openapi.json)) |
 | Mainnet | ⏳ planned after Sepolia soak + audit | — |
 
 Milestone log:

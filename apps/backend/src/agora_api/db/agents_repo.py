@@ -37,6 +37,17 @@ async def get_by_did(session: AsyncSession, did: str) -> Agent | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_id(session: AsyncSession, agent_id: Any) -> Agent | None:
+    """Lookup by PK (UUID). Returns None if not found.
+
+    Used by the x402 lifecycle routes when they need the full Agent
+    object (e.g. to pass to `enqueue_for_agent`) but only have a foreign
+    key from the jobs table.
+    """
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
+    return result.scalar_one_or_none()
+
+
 async def list_all(session: AsyncSession) -> list[Agent]:
     result = await session.execute(select(Agent).order_by(Agent.created_at))
     return list(result.scalars().all())

@@ -41,11 +41,16 @@ export {
 export { AgentIdentity, type DidDocument, type DidDocumentService } from "./identity.js";
 export { verifyRequest, SignatureInvalid } from "./webhooks.js";
 export {
+  approveWithX402,
   hireWithX402,
   quote as x402Quote,
+  refundWithX402,
+  submitResultWithX402,
   type HireWithX402Args,
+  type LifecycleArgs,
   type PaymentRequired,
   type QuoteArgs,
+  type SubmitResultArgs,
 } from "./x402.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";

@@ -1,19 +1,28 @@
 """x402 — HTTP 402 Payment Required for agent-native payments.
 
-Inspired by the Coinbase x402 spec. The flow is:
+Inspired by the Coinbase x402 spec. The full job lifecycle is:
 
-  1. Agent calls POST /v1/x402/jobs with the job description but no payment.
-  2. Server replies 402 with header
-       X-Payment-Required: <json>
-     describing exactly which on-chain payment is needed (chain, asset,
-     contract, amount, recipient, jobId-to-be) plus a short-lived
-     payment challenge.
-  3. Agent funds the escrow contract on-chain (AgoraEscrow.createJob).
-  4. Agent retries the same POST with header
-       X-Payment-Tx: <tx_hash>
-     pointing at the transaction that fulfilled the challenge.
-  5. Server verifies the tx on-chain, mirrors the job in its DB, and
-     returns 201 with the job representation.
+  hire    → POST /v1/x402/jobs                  (requester)
+              first call:  402 + X-Payment-Required (createJob args)
+              retry:       201 with mirrored job row, status="offered"
+
+  result  → POST /v1/x402/jobs/{job_id}/result  (provider)
+              first call:  402 + X-Payment-Required (submitResult args)
+              retry:       200 with updated job row, status="submitted"
+
+  approve → POST /v1/x402/jobs/{job_id}/approve (requester)
+              first call:  402 + X-Payment-Required (approveAndPay args)
+              retry:       200 with updated job row, status="completed"
+
+  refund  → POST /v1/x402/jobs/{job_id}/refund  (requester, after deadline)
+              first call:  402 + X-Payment-Required (refund args)
+              retry:       200 with updated job row, status="refunded"
+
+Every "first call" returns a machine-readable 402 telling the agent the
+exact on-chain call to make. Every "retry" verifies the tx receipt on
+chain, double-checks the event args against what the API itself
+instructed, and only then mutates the DB. The API never signs on the
+agent's behalf — agents hold their own keys.
 
 This endpoint lives next to the off-chain ledger jobs router (/v1/jobs);
 both can coexist while we migrate. x402 is the agent-native rail.
@@ -33,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chain import get_escrow_client
 from ..config import get_settings
-from ..db import agents_repo, jobs_repo
+from ..db import agents_repo, jobs_repo, reviews_repo
 from ..db.base import get_session
 from ..db.models import Job, JobStatus
 from ..rate_limit import limiter
@@ -54,6 +63,69 @@ def _task_hash(payload: dict[str, Any]) -> bytes:
     """Canonical task hash for on-chain commitment."""
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(blob).digest()
+
+
+def _result_hash(payload: dict[str, Any]) -> bytes:
+    """Canonical result hash for on-chain commitment.
+
+    Same scheme as `_task_hash` so providers and verifiers agree on the
+    canonical form. The contract only stores the bytes32; agents can
+    re-hash off-chain to prove integrity.
+    """
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).digest()
+
+
+async def _load_onchain_job_or_404(session: AsyncSession, job_id: str) -> Job:
+    """Resolve a job UUID from the URL, ensure it is an on-chain job.
+
+    The x402 lifecycle endpoints only operate on jobs that were created
+    via `POST /v1/x402/jobs` (settlement_mode='onchain'); attempting to
+    drive an off-chain job through this path is a 409.
+    """
+    try:
+        jid = uuid.UUID(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid job id: {e}") from e
+    job = await jobs_repo.get(session, jid)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    if job.settlement_mode != "onchain":
+        raise HTTPException(
+            status_code=409,
+            detail=f"job {job_id} is not on-chain (settlement_mode={job.settlement_mode})",
+        )
+    if job.onchain_job_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job {job_id} is on-chain but has no onchain_job_id (data inconsistency)",
+        )
+    return job
+
+
+def _payment_required_response(payment_required: dict[str, Any], hint: str) -> Response:
+    """Build the canonical 402 response — header + JSON body."""
+    return Response(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        headers={"X-Payment-Required": json.dumps(payment_required)},
+        content=json.dumps({"error": "payment_required", "detail": hint}),
+        media_type="application/json",
+    )
+
+
+def _find_event(receipt: Any, event_factory: Any) -> dict[str, Any] | None:
+    """Scan a tx receipt for an event matching `event_factory()`.
+
+    Returns the parsed log (with .args, .event, .blockNumber, …) or
+    None if no log in this receipt matched. Used so each x402 step can
+    re-verify the on-chain side-effect it expected.
+    """
+    for log_entry in receipt["logs"]:
+        try:
+            return event_factory().process_log(log_entry)
+        except Exception:  # log belongs to a different contract/event
+            continue
+    return None
 
 
 @router.post(
@@ -266,3 +338,341 @@ async def quote(
             ),
         },
     }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Provider-side result submission  (PROVIDER -> AgoraEscrow.submitResult)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class X402ResultRequest(BaseModel):
+    result: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Result payload. Hashed canonically and committed on-chain.",
+    )
+
+
+@router.post(
+    "/jobs/{job_id}/result",
+    summary="Submit result for an on-chain job (provider, via AgoraEscrow.submitResult)",
+)
+@limiter.limit("60/minute")
+async def submit_x402_result(
+    request: Request,
+    job_id: str,
+    body: X402ResultRequest,
+    session: AsyncSession = Depends(get_session),
+    x_payment_tx: str | None = Header(default=None, alias="X-Payment-Tx"),
+) -> Any:
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="on-chain settlement disabled (set enable_onchain_payments=true)",
+        )
+
+    job = await _load_onchain_job_or_404(session, job_id)
+
+    # Allow only the on-chain "Funded" stage (DB-mirror: offered) to be
+    # transitioned to "Submitted". Idempotent if already submitted.
+    if job.status == JobStatus.submitted:
+        return _job_view(job)
+    if job.status != JobStatus.offered:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job {job_id} cannot submit result from state "
+                f"{job.status.value}; expected 'offered'"
+            ),
+        )
+
+    result_hash = _result_hash(body.result)
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: no X-Payment-Tx → return 402 with submitResult args ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "submitResult",
+            "args": {
+                "jobId": str(onchain_job_id_int),
+                "resultHash": "0x" + result_hash.hex(),
+            },
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrow.submitResult with the parameters in "
+                "X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>. Only the registered payee can "
+                "submit; the contract enforces NotPayee."
+            ),
+        )
+
+    # ── Step 2: client provided X-Payment-Tx → verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    parsed = _find_event(receipt, client.escrow.events.ResultSubmitted)
+    if parsed is None:
+        raise HTTPException(status_code=402, detail="ResultSubmitted event missing")
+    if int(parsed["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch")
+    if bytes(parsed["args"]["resultHash"]) != result_hash:
+        raise HTTPException(status_code=402, detail="resultHash mismatch")
+
+    # Mirror state into DB.
+    await jobs_repo.set_result(session, job, body.result)
+    job.status = JobStatus.submitted
+    await session.flush()
+
+    # Notify the requester. Look the agent up so we can pass the full
+    # Agent object to `enqueue_for_agent` (Sprint 9b bug taught us not to
+    # pass bare DIDs).
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    if requester is not None:
+        await enqueue_for_agent(
+            session,
+            agent=requester,
+            job_id=job.id,
+            event_type="job.result_submitted",
+            payload={**_job_view(job), "result": body.result},
+        )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Requester-side approval & payout  (REQUESTER -> AgoraEscrow.approveAndPay)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class X402ApproveRequest(BaseModel):
+    # No body fields required — the action is implicit in the URL. We
+    # keep an empty model to leave room for future fields (approver_did
+    # signature, idempotency_key, …).
+    pass
+
+
+@router.post(
+    "/jobs/{job_id}/approve",
+    summary="Approve a submitted on-chain job and release escrow (requester)",
+)
+@limiter.limit("60/minute")
+async def approve_x402_job(
+    request: Request,
+    job_id: str,
+    body: X402ApproveRequest,
+    session: AsyncSession = Depends(get_session),
+    x_payment_tx: str | None = Header(default=None, alias="X-Payment-Tx"),
+) -> Any:
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="on-chain settlement disabled (set enable_onchain_payments=true)",
+        )
+
+    job = await _load_onchain_job_or_404(session, job_id)
+
+    if job.status == JobStatus.completed:
+        return _job_view(job)
+    if job.status != JobStatus.submitted:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job {job_id} cannot be approved from state "
+                f"{job.status.value}; expected 'submitted'"
+            ),
+        )
+
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: no X-Payment-Tx → return 402 with approveAndPay args ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "approveAndPay",
+            "args": {"jobId": str(onchain_job_id_int)},
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrow.approveAndPay with the parameters in "
+                "X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>. Only the payer (original "
+                "requester) can approve; the contract enforces NotPayer."
+            ),
+        )
+
+    # ── Step 2: verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    parsed = _find_event(receipt, client.escrow.events.JobApproved)
+    if parsed is None:
+        raise HTTPException(status_code=402, detail="JobApproved event missing")
+    if int(parsed["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch")
+
+    # Mirror state into DB.
+    job.release_tx_hash = x_payment_tx
+    job.status = JobStatus.completed
+    await session.flush()
+
+    # Bump reputation counters for both sides (same as off-chain approve).
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    provider = await agents_repo.get_by_id(session, job.provider_agent_id)
+
+    if requester is not None:
+        await reviews_repo.increment_jobs_completed(session, requester)
+    if provider is not None:
+        await reviews_repo.increment_jobs_completed(session, provider)
+
+    # Notify provider that funds were released.
+    if provider is not None:
+        await enqueue_for_agent(
+            session,
+            agent=provider,
+            job_id=job.id,
+            event_type="job.completed",
+            payload={
+                **_job_view(job),
+                "fee_smallest_unit": str(parsed["args"]["fee"]),
+                "insurance_smallest_unit": str(parsed["args"]["insuranceCut"]),
+            },
+        )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Refund path  (REQUESTER -> AgoraEscrow.refund, after deadline)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class X402RefundRequest(BaseModel):
+    pass
+
+
+@router.post(
+    "/jobs/{job_id}/refund",
+    summary="Refund an unfulfilled on-chain job (requester, after deadline)",
+)
+@limiter.limit("30/minute")
+async def refund_x402_job(
+    request: Request,
+    job_id: str,
+    body: X402RefundRequest,
+    session: AsyncSession = Depends(get_session),
+    x_payment_tx: str | None = Header(default=None, alias="X-Payment-Tx"),
+) -> Any:
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="on-chain settlement disabled (set enable_onchain_payments=true)",
+        )
+
+    job = await _load_onchain_job_or_404(session, job_id)
+
+    if job.status == JobStatus.refunded:
+        return _job_view(job)
+    # Refund is only valid in "Funded" state on-chain (= DB 'offered').
+    # Once a result has been submitted, the requester must approve or
+    # dispute instead.
+    if job.status != JobStatus.offered:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job {job_id} cannot be refunded from state "
+                f"{job.status.value}; expected 'offered' (= on-chain 'Funded')"
+            ),
+        )
+
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: 402 with refund() instructions ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "refund",
+            "args": {"jobId": str(onchain_job_id_int)},
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+            "note": (
+                "AgoraEscrow.refund(jobId) is only callable by anyone "
+                "once the on-chain deadline has elapsed (block.timestamp "
+                "> deadline). Before then, only the contract owner can "
+                "refund. If your tx reverts, check the deadline."
+            ),
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrow.refund with the parameters in "
+                "X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>."
+            ),
+        )
+
+    # ── Step 2: verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    parsed = _find_event(receipt, client.escrow.events.JobRefunded)
+    if parsed is None:
+        raise HTTPException(status_code=402, detail="JobRefunded event missing")
+    if int(parsed["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch")
+
+    job.release_tx_hash = x_payment_tx  # reuse this column for the refund tx
+    job.status = JobStatus.refunded
+    await session.flush()
+
+    # Notify both sides.
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    provider = await agents_repo.get_by_id(session, job.provider_agent_id)
+    payload = {**_job_view(job), "reason": "deadline_or_owner_refund"}
+    for agent in (requester, provider):
+        if agent is not None:
+            await enqueue_for_agent(
+                session,
+                agent=agent,
+                job_id=job.id,
+                event_type="job.refunded",
+                payload=payload,
+            )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)

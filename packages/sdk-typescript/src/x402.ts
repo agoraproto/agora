@@ -32,6 +32,30 @@ const ESCROW_ABI = [
     ],
     outputs: [{ name: "jobId", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "submitResult",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "jobId", type: "uint256" },
+      { name: "resultHash", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "approveAndPay",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "refund",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [],
+  },
 ] as const;
 
 const ERC20_ABI = [
@@ -213,4 +237,150 @@ async function loadViem(): Promise<{
       "x402 helper requires `viem`. Install with: npm install viem",
     );
   }
+}
+
+
+// ───────────────────────────────────────────────────────────────────
+// Lifecycle helpers: result / approve / refund
+// Each performs the same 3-step dance as hireWithX402:
+//   1. POST {endpoint} → 402 with X-Payment-Required (or 200 if already done)
+//   2. on-chain tx via viem
+//   3. POST {endpoint} again with X-Payment-Tx header → 200 with updated job
+// ───────────────────────────────────────────────────────────────────
+
+
+export interface LifecycleArgs {
+  baseUrl: string;
+  jobId: string;
+  rpcUrl: string;
+  privateKey: `0x${string}`;
+  /** Chain object compatible with viem (e.g. baseSepolia). Required. */
+  chain: unknown;
+  timeoutMs?: number;
+}
+
+export interface SubmitResultArgs extends LifecycleArgs {
+  result: Record<string, unknown>;
+}
+
+async function lifecycleCall(
+  args: {
+    baseUrl: string;
+    path: string;
+    body: Record<string, unknown>;
+    rpcUrl: string;
+    privateKey: `0x${string}`;
+    chain: unknown;
+    contractFunction: string;
+    extractArgs: (required: PaymentRequired) => unknown[];
+  },
+): Promise<Record<string, unknown>> {
+  const { createPublicClient, createWalletClient, http, privateKeyToAccount } =
+    await loadViem();
+  const base = args.baseUrl.replace(/\/$/, "");
+
+  // Step 1
+  const initial = await fetch(`${base}${args.path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args.body),
+  });
+  if (initial.status === 200) {
+    return (await initial.json()) as Record<string, unknown>;
+  }
+  if (initial.status !== 402) {
+    throw new Error(`expected 402, got ${initial.status}: ${await initial.text()}`);
+  }
+  const required = JSON.parse(initial.headers.get("X-Payment-Required") ?? "{}") as PaymentRequired;
+  if ((required as any).function !== args.contractFunction) {
+    throw new Error(
+      `server asked for ${(required as any).function}, expected ${args.contractFunction}`,
+    );
+  }
+
+  // Step 2
+  const account = privateKeyToAccount(args.privateKey);
+  const wallet = createWalletClient({ account, chain: args.chain as any, transport: http(args.rpcUrl) });
+  const pub = createPublicClient({ chain: args.chain as any, transport: http(args.rpcUrl) });
+  const tx = await wallet.writeContract({
+    address: required.recipient_contract,
+    abi: ESCROW_ABI,
+    functionName: args.contractFunction,
+    args: args.extractArgs(required),
+  });
+  await pub.waitForTransactionReceipt({ hash: tx });
+
+  // Step 3
+  const confirmed = await fetch(`${base}${args.path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Payment-Tx": tx },
+    body: JSON.stringify(args.body),
+  });
+  if (!confirmed.ok) {
+    throw new Error(`server rejected: ${confirmed.status} ${await confirmed.text()}`);
+  }
+  return (await confirmed.json()) as Record<string, unknown>;
+}
+
+/**
+ * Provider-side: submit a result for an on-chain job.
+ * Calls AgoraEscrow.submitResult(jobId, resultHash).
+ * Only the registered payee can call this (contract enforces NotPayee).
+ */
+export async function submitResultWithX402(
+  args: SubmitResultArgs,
+): Promise<Record<string, unknown>> {
+  return lifecycleCall({
+    baseUrl: args.baseUrl,
+    path: `/v1/x402/jobs/${args.jobId}/result`,
+    body: { result: args.result },
+    rpcUrl: args.rpcUrl,
+    privateKey: args.privateKey,
+    chain: args.chain,
+    contractFunction: "submitResult",
+    extractArgs: (required) => [
+      BigInt((required.args as any).jobId),
+      (required.args as any).resultHash,
+    ],
+  });
+}
+
+/**
+ * Requester-side: approve a submitted job and release escrow.
+ * Calls AgoraEscrow.approveAndPay(jobId).
+ * Only the original payer can call this (contract enforces NotPayer).
+ */
+export async function approveWithX402(
+  args: LifecycleArgs,
+): Promise<Record<string, unknown>> {
+  return lifecycleCall({
+    baseUrl: args.baseUrl,
+    path: `/v1/x402/jobs/${args.jobId}/approve`,
+    body: {},
+    rpcUrl: args.rpcUrl,
+    privateKey: args.privateKey,
+    chain: args.chain,
+    contractFunction: "approveAndPay",
+    extractArgs: (required) => [BigInt((required.args as any).jobId)],
+  });
+}
+
+/**
+ * Refund an unfulfilled on-chain job (deadline must have passed).
+ * Calls AgoraEscrow.refund(jobId). Tx will revert if the deadline has
+ * not yet elapsed and the caller is not the contract owner.
+ */
+export async function refundWithX402(
+  args: LifecycleArgs,
+): Promise<Record<string, unknown>> {
+  return lifecycleCall({
+    baseUrl: args.baseUrl,
+    path: `/v1/x402/jobs/${args.jobId}/refund`,
+    body: {},
+    rpcUrl: args.rpcUrl,
+    privateKey: args.privateKey,
+    chain: args.chain,
+    contractFunction: "refund",
+    extractArgs: (required) => [BigInt((required.args as any).jobId)],
+  });
 }

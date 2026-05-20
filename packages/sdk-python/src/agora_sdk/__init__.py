@@ -28,16 +28,24 @@ from .agent import Agent
 from .client import AgoraClient
 from .identity import AgentIdentity
 from .webhooks import SignatureInvalid, verify_request
-from .x402 import hire_with_x402
+from .x402 import (
+    approve_with_x402,
+    hire_with_x402,
+    refund_with_x402,
+    submit_result_with_x402,
+)
 from .x402 import quote as x402_quote
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
     "Agent",
     "AgentIdentity",
     "AgoraClient",
     "SignatureInvalid",
+    "approve_with_x402",
     "hire_with_x402",
+    "refund_with_x402",
+    "submit_result_with_x402",
     "verify_request",
     "x402_quote",
 ]

@@ -128,6 +128,32 @@ _ESCROW_ABI: list[dict[str, Any]] = [
         ],
         "anonymous": False,
     },
+    {
+        "type": "event",
+        "name": "ResultSubmitted",
+        "inputs": [
+            {"name": "jobId", "type": "uint256", "indexed": True},
+            {"name": "resultHash", "type": "bytes32", "indexed": False},
+        ],
+        "anonymous": False,
+    },
+    {
+        "type": "event",
+        "name": "JobDisputed",
+        "inputs": [
+            {"name": "jobId", "type": "uint256", "indexed": True},
+            {"name": "reason", "type": "string", "indexed": False},
+        ],
+        "anonymous": False,
+    },
+    {
+        "type": "event",
+        "name": "JobRefunded",
+        "inputs": [
+            {"name": "jobId", "type": "uint256", "indexed": True},
+        ],
+        "anonymous": False,
+    },
 ]
 
 # Minimal ERC20 ABI for approve/balanceOf checks against USDC.
