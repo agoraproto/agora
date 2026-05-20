@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..db import agents_repo, listings_repo
+from ..db import agents_repo, jobs_repo, listings_repo
 from ..db.base import get_session
-from ..db.models import ListingKind, ListingType
+from ..db.models import JobStatus, ListingKind, ListingType
 from ..rate_limit import limiter
 
 router = APIRouter()
@@ -205,6 +205,121 @@ async def get_listing(
     if listing is None:
         raise HTTPException(status_code=404, detail=f"listing {listing_id} not found")
     return listings_repo.to_public_dict(listing)
+
+
+@router.get(
+    "/{listing_id}/delivery",
+    summary="Get the digital deliverable for a paid listing purchase",
+)
+async def get_delivery(
+    listing_id: str,
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Return a marketplace listing's deliverable to the legitimate buyer.
+
+    Authorisation today is "knowledge of the (listing_id, job_id) pair"
+    — the job_id is a UUID returned to the buyer when the x402 POST
+    confirmed their on-chain payment, so it acts as a bearer token.
+    Sprint 10d will replace this with Privy-backed buyer auth.
+
+    Behaviour:
+
+      * Looks up the Listing + Job; both must exist and the Job must be
+        linked back to the Listing via `Job.listing_id`.
+      * For DIGITAL PRODUCT listings: returns `digital_content` as soon
+        as the Job is at least in `offered` status (i.e. escrow funded
+        on-chain). The seller's USDC is still locked in escrow until the
+        buyer approves — this is intentional so the buyer can preview
+        the artifact before releasing payment.
+      * For SERVICE listings: returns the Job's `result` (the artifact
+        the provider submitted via submitResult). Only available when
+        the Job is in `submitted` or `completed` status.
+      * 404 if either is missing or the pair doesn't match.
+      * 409 if the Job hasn't reached a deliverable state yet.
+    """
+    try:
+        lid = uuid.UUID(listing_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid listing id: {e}") from e
+    try:
+        jid = uuid.UUID(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid job id: {e}") from e
+
+    listing = await listings_repo.get(session, lid)
+    if listing is None:
+        raise HTTPException(status_code=404, detail=f"listing {listing_id} not found")
+
+    job = await jobs_repo.get(session, jid)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    if job.listing_id != lid:
+        raise HTTPException(
+            status_code=404,
+            detail=f"job {job_id} is not linked to listing {listing_id}",
+        )
+
+    # Status-gating per listing_type.
+    lt = (
+        listing.listing_type.value
+        if hasattr(listing.listing_type, "value")
+        else str(listing.listing_type)
+    )
+    status_value = (
+        job.status.value if hasattr(job.status, "value") else str(job.status)
+    )
+
+    if lt == "digital_product":
+        # Buyer-paid (escrow funded) is enough — the artifact was
+        # pre-set by the seller at listing time and doesn't depend on
+        # job state advancing further.
+        if status_value not in ("offered", "submitted", "completed"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"job is in '{status_value}' state — deliverable is "
+                    f"available once escrow has been funded ('offered')."
+                ),
+            )
+        return {
+            "listing_id": str(listing.id),
+            "job_id": str(job.id),
+            "kind": "digital_product",
+            "delivery_status": status_value,
+            "content_type": listing.digital_content_type,
+            "content": listing.digital_content,
+            "note": (
+                "Funds are still in escrow until you approve the job on-chain. "
+                "Call POST /v1/x402/jobs/{job_id}/approve to release."
+                if status_value == "offered"
+                else None
+            ),
+        }
+
+    # Services: result must have been submitted by the provider.
+    if status_value not in ("submitted", "completed"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job is in '{status_value}' state — service result not yet "
+                f"submitted. Wait for the provider to call submitResult."
+            ),
+        )
+    return {
+        "listing_id": str(listing.id),
+        "job_id": str(job.id),
+        "kind": "service",
+        "delivery_status": status_value,
+        "content_type": "application/json",
+        "content": job.result,
+        "note": (
+            "Result delivered. Call POST /v1/x402/jobs/{job_id}/approve to "
+            "release the seller's USDC and close the job."
+            if status_value == "submitted"
+            else None
+        ),
+    }
 
 
 @router.delete(

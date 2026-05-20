@@ -46,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chain import get_escrow_client
 from ..config import get_settings
-from ..db import agents_repo, disputes_repo, jobs_repo, reviews_repo
+from ..db import agents_repo, disputes_repo, jobs_repo, listings_repo, reviews_repo
 from ..db.base import get_session
 from ..db.models import Job, JobStatus
 from ..rate_limit import limiter
@@ -61,6 +61,15 @@ class X402JobRequest(BaseModel):
     task: dict[str, Any] = Field(default_factory=dict)
     budget_usdc: str = Field(..., description="Amount in USDC, decimal (e.g. '5.00')")
     deadline_unix: int = Field(..., description="Unix timestamp for job deadline")
+    listing_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional marketplace listing this purchase originates from. "
+            "When set, the resulting Job is linked back to the Listing so "
+            "the delivery endpoint can authorise the buyer to fetch "
+            "`digital_content` after on-chain payment."
+        ),
+    )
 
 
 def _task_hash(payload: dict[str, Any]) -> bytes:
@@ -238,6 +247,17 @@ async def create_x402_job(
     if existing is not None:
         return _job_view(existing)
 
+    # Optional: link back to a marketplace Listing so the delivery
+    # endpoint can authorise the buyer to fetch digital_content later.
+    listing_uuid: uuid.UUID | None = None
+    if body.listing_id:
+        try:
+            listing_uuid = uuid.UUID(body.listing_id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"invalid listing_id: {e}"
+            ) from e
+
     job = Job(
         id=uuid.uuid4(),
         requester_agent_id=requester.id,
@@ -250,6 +270,7 @@ async def create_x402_job(
         onchain_job_id=Decimal(onchain_job_id),
         settlement_mode="onchain",
         chain=settings.chain_name,
+        listing_id=listing_uuid,
     )
     session.add(job)
     await session.commit()
@@ -279,6 +300,7 @@ def _job_view(j: Job) -> dict[str, Any]:
         "onchain_job_id": str(j.onchain_job_id) if j.onchain_job_id is not None else None,
         "settlement_mode": j.settlement_mode,
         "chain": j.chain,
+        "listing_id": str(j.listing_id) if j.listing_id is not None else None,
     }
 
 
@@ -552,6 +574,13 @@ async def approve_x402_job(
         await reviews_repo.increment_jobs_completed(session, requester)
     if provider is not None:
         await reviews_repo.increment_jobs_completed(session, provider)
+
+    # If this job was a marketplace purchase, bump the listing's
+    # sales_count so the browse UI reflects what's selling.
+    if job.listing_id is not None:
+        listing = await listings_repo.get(session, job.listing_id)
+        if listing is not None:
+            await listings_repo.increment_sales(session, listing)
 
     # Notify provider that funds were released.
     if provider is not None:

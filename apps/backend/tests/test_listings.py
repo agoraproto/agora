@@ -213,3 +213,185 @@ async def test_pagination(client: AsyncClient) -> None:
     r = await client.get("/v1/listings", params={"limit": 2})
     assert r.status_code == 200
     assert len(r.json()["listings"]) <= 2
+
+
+# ── /v1/listings/{id}/delivery (Sprint 10c) ──
+
+
+@pytest.mark.asyncio
+async def test_delivery_unknown_listing(client: AsyncClient) -> None:
+    """404 when listing doesn't exist."""
+    r = await client.get(
+        "/v1/listings/00000000-0000-0000-0000-000000000000/delivery",
+        params={"job_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delivery_bad_uuid(client: AsyncClient) -> None:
+    r = await client.get(
+        "/v1/listings/not-a-uuid/delivery",
+        params={"job_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delivery_releases_digital_content(client: AsyncClient, session) -> None:
+    """Once a Job is linked to a digital-product listing AND in `offered`
+    status (escrow funded), the delivery endpoint exposes the content."""
+    import uuid as _uuid
+    from decimal import Decimal as _D
+
+    from agora_api.db.models import (
+        Agent,
+        AgentStatus,
+        AgentType,
+        Job,
+        JobStatus,
+        TrustLevel,
+    )
+
+    # 1. Create a digital product listing via API.
+    created = (await client.post("/v1/listings", json=_product_listing())).json()
+    listing_id = _uuid.UUID(created["id"])
+
+    # 2. Create two agents so the Job can reference them (FK constraint).
+    a = Agent(
+        id=_uuid.uuid4(),
+        did="did:agora:buyer_dl",
+        owner_did="did:agora:buyer_dl",
+        type=AgentType.service,
+        name="buyer",
+        description="buyer",
+        capabilities=[],
+        pricing={},
+        constraints={},
+        did_document={},
+        stake_eur=_D("0"),
+        trust_level=TrustLevel.new,
+        status=AgentStatus.active,
+    )
+    b = Agent(
+        id=_uuid.uuid4(),
+        did="did:agora:seller_dl",
+        owner_did="did:agora:seller_dl",
+        type=AgentType.service,
+        name="seller",
+        description="seller",
+        capabilities=[],
+        pricing={},
+        constraints={},
+        did_document={},
+        stake_eur=_D("0"),
+        trust_level=TrustLevel.new,
+        status=AgentStatus.active,
+    )
+    session.add_all([a, b])
+    await session.flush()
+
+    # 3. Create a Job linked to the Listing.
+    j = Job(
+        id=_uuid.uuid4(),
+        requester_agent_id=a.id,
+        provider_agent_id=b.id,
+        task_spec={"listing_id": str(listing_id)},
+        status=JobStatus.offered,  # escrow funded — eligible for digital delivery
+        price_amount=_D("1.50"),
+        price_currency="USDC",
+        settlement_mode="onchain",
+        chain="base-sepolia",
+        listing_id=listing_id,
+    )
+    session.add(j)
+    await session.commit()
+
+    # 4. Hit the delivery endpoint.
+    r = await client.get(
+        f"/v1/listings/{listing_id}/delivery",
+        params={"job_id": str(j.id)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["kind"] == "digital_product"
+    assert body["delivery_status"] == "offered"
+    # The actual deliverable — the listing's digital_content.
+    assert body["content"]["filename"] == "pack.md"
+    assert body["note"] is not None  # "approve to release escrow" hint
+
+
+@pytest.mark.asyncio
+async def test_delivery_rejects_unlinked_job(client: AsyncClient, session) -> None:
+    """If a job exists but its listing_id doesn't match, refuse delivery
+    (don't leak content from someone else's purchase)."""
+    import uuid as _uuid
+    from decimal import Decimal as _D
+
+    from agora_api.db.models import (
+        Agent,
+        AgentStatus,
+        AgentType,
+        Job,
+        JobStatus,
+        TrustLevel,
+    )
+
+    created = (await client.post("/v1/listings", json=_product_listing())).json()
+    listing_id = _uuid.UUID(created["id"])
+
+    a = Agent(
+        id=_uuid.uuid4(),
+        did="did:agora:a2",
+        owner_did="did:agora:a2",
+        type=AgentType.service,
+        name="a",
+        description="a",
+        capabilities=[],
+        pricing={},
+        constraints={},
+        did_document={},
+        stake_eur=_D("0"),
+        trust_level=TrustLevel.new,
+        status=AgentStatus.active,
+    )
+    b = Agent(
+        id=_uuid.uuid4(),
+        did="did:agora:b2",
+        owner_did="did:agora:b2",
+        type=AgentType.service,
+        name="b",
+        description="b",
+        capabilities=[],
+        pricing={},
+        constraints={},
+        did_document={},
+        stake_eur=_D("0"),
+        trust_level=TrustLevel.new,
+        status=AgentStatus.active,
+    )
+    session.add_all([a, b])
+    await session.flush()
+
+    # Job with listing_id=None (not linked) — should not deliver.
+    j = Job(
+        id=_uuid.uuid4(),
+        requester_agent_id=a.id,
+        provider_agent_id=b.id,
+        task_spec={},
+        status=JobStatus.offered,
+        price_amount=_D("1.00"),
+        price_currency="USDC",
+        settlement_mode="onchain",
+        chain="base-sepolia",
+        listing_id=None,
+    )
+    session.add(j)
+    await session.commit()
+
+    r = await client.get(
+        f"/v1/listings/{listing_id}/delivery",
+        params={"job_id": str(j.id)},
+    )
+    assert r.status_code == 404
+    assert "not linked" in r.json()["detail"]

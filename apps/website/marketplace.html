@@ -525,6 +525,169 @@
     font-size: 0.85rem;
   }
 
+  /* ─── Buy wizard ─────────────────────────────────────── */
+  .buy-wizard {
+    display: none;
+    margin-top: 18px;
+    padding: 20px;
+    background: var(--bg-elev);
+    border: 1px solid var(--accent-dim);
+    border-radius: 10px;
+  }
+  .buy-wizard.open { display: block; }
+  .buy-wizard h3 {
+    color: var(--accent);
+    font-size: 0.95rem;
+    margin-bottom: 14px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .step {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 22px;
+    padding-bottom: 20px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .step-num {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    color: var(--bg);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    font-family: var(--mono);
+  }
+  .step.done .step-num { background: var(--success); }
+  .step.pending .step-num { background: var(--surface-2); color: var(--text-dim); }
+  .step-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .step-content h4 {
+    color: var(--text);
+    font-size: 0.95rem;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .step-content p {
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: #fbbf24;
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 200px;
+    overflow-y: auto;
+    position: relative;
+  }
+  .code-block .copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 3px 8px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: var(--mono);
+    cursor: pointer;
+  }
+  .code-block .copy-btn:hover { color: var(--text); }
+  .code-block .copy-btn.copied { color: var(--success); border-color: var(--success); }
+
+  .tx-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .tx-input-row input {
+    flex: 1;
+    padding: 9px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    outline: none;
+  }
+  .tx-input-row input:focus { border-color: var(--accent); }
+  .btn-verify {
+    padding: 9px 18px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    white-space: nowrap;
+  }
+  .btn-verify:hover { background: var(--accent-dim); }
+  .btn-verify:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .delivery-box {
+    margin-top: 14px;
+    padding: 16px;
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid var(--success);
+    border-radius: 8px;
+  }
+  .delivery-box h4 {
+    color: var(--success);
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+  }
+  .delivery-content {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--text);
+    white-space: pre-wrap;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .error-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(248, 113, 113, 0.1);
+    border-left: 3px solid #f87171;
+    border-radius: 4px;
+    color: #fca5a5;
+    font-size: 0.85rem;
+  }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* ─── Footer ─────────────────────────────────────────── */
   footer {
     max-width: 1280px;
@@ -630,15 +793,73 @@
           <span class="modal-price" id="modalPrice">0.00</span>
           <span class="currency" id="modalCurrency">USDC</span>
         </div>
-        <button class="btn-buy" id="modalBuyBtn" disabled>
+        <button class="btn-buy" id="modalBuyBtn">
           Buy with USDC
         </button>
       </div>
-      <div class="buy-note">
-        🚧 <strong>Buy flow lands in Sprint 10c.</strong> The button is
-        wired up to the existing <code>POST /v1/x402/jobs</code> flow but
-        the digital-content delivery layer isn't shipped yet. For now,
-        listings are browseable; checkout follows.
+
+      <!-- Buy wizard: revealed when user clicks "Buy with USDC" -->
+      <div class="buy-wizard" id="buyWizard">
+        <h3>Purchase Flow — Base Sepolia</h3>
+
+        <div class="step" id="step1">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>You need a Sepolia wallet with USDC + ETH for gas</h4>
+            <p>
+              Get test USDC from <a href="https://faucet.circle.com" target="_blank">faucet.circle.com</a>
+              (select Base Sepolia). Get gas ETH from
+              <a href="https://www.alchemy.com/faucets/base-sepolia" target="_blank">Alchemy's Sepolia faucet</a>.
+              You'll need at least the listing price in USDC plus ~0.0001 ETH for two transactions.
+            </p>
+          </div>
+        </div>
+
+        <div class="step" id="step2">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Get on-chain payment instructions</h4>
+            <p>
+              Click below — the server will tell us exactly what
+              <code>cast send</code> commands to broadcast. No funds move yet.
+            </p>
+            <button class="btn-verify" id="btnGetChallenge">Get payment instructions →</button>
+            <div id="challengeResult"></div>
+          </div>
+        </div>
+
+        <div class="step pending" id="step3">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Broadcast the on-chain transactions</h4>
+            <p id="step3Help" style="opacity:0.6;">
+              (Will appear after step 2.)
+            </p>
+            <div id="step3Commands"></div>
+          </div>
+        </div>
+
+        <div class="step pending" id="step4">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Submit your createJob tx hash to finalize the purchase</h4>
+            <p style="opacity:0.6;" id="step4Help">
+              (Will appear after step 3.)
+            </p>
+            <div id="step4Input"></div>
+          </div>
+        </div>
+
+        <div class="step pending" id="step5">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h4>Receive your delivery</h4>
+            <p style="opacity:0.6;" id="step5Help">
+              (Will appear once the purchase is confirmed.)
+            </p>
+            <div id="deliveryResult"></div>
+          </div>
+        </div>
       </div>
 
       <div class="modal-section" id="modalSchemaSection" style="display:none;">
@@ -909,6 +1130,272 @@
       loadListings();
     }, 250);
   });
+
+  // ─── Buy wizard ─────────────────────────────────────────
+
+  // Buyer identity. For now we use a hard-coded demo DID — Sprint 10d
+  // will replace this with Privy-backed buyer auth. The DID needs to
+  // exist as an Agent on Agora; alice-demo is seeded since Sprint 5.
+  const BUYER_DID = "did:agora:4mrYSXT_f69BiaSeo7vmaA";
+
+  // The currently-open listing in the modal. Captured when openModal()
+  // runs so the buy wizard can reference it.
+  let currentListing = null;
+
+  // The x402 request body — built once, reused for both the 402 and the
+  // retry-with-X-Payment-Tx. The server hashes the `task` deterministically
+  // so the body MUST be byte-identical across the two calls.
+  let currentBuyBody = null;
+  let currentChallenge = null; // X-Payment-Required parsed JSON
+
+  // We patch openModal to capture the listing + reset wizard state.
+  const _origOpenModal = openModal;
+  openModal = function (L) {
+    currentListing = L;
+    currentBuyBody = null;
+    currentChallenge = null;
+    resetWizard();
+    _origOpenModal(L);
+  };
+
+  function resetWizard() {
+    document.getElementById("buyWizard").classList.remove("open");
+    ["step1", "step2", "step3", "step4", "step5"].forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.classList.remove("done");
+      if (i >= 2) el.classList.add("pending");
+    });
+    document.getElementById("challengeResult").innerHTML = "";
+    document.getElementById("step3Commands").innerHTML = "";
+    document.getElementById("step3Help").innerHTML = "(Will appear after step 2.)";
+    document.getElementById("step3Help").style.opacity = "0.6";
+    document.getElementById("step4Input").innerHTML = "";
+    document.getElementById("step4Help").innerHTML = "(Will appear after step 3.)";
+    document.getElementById("step4Help").style.opacity = "0.6";
+    document.getElementById("deliveryResult").innerHTML = "";
+    document.getElementById("step5Help").innerHTML = "(Will appear once the purchase is confirmed.)";
+    document.getElementById("step5Help").style.opacity = "0.6";
+  }
+
+  document.getElementById("modalBuyBtn").addEventListener("click", () => {
+    document.getElementById("buyWizard").classList.add("open");
+    // Scroll into view so the wizard is visible.
+    document.getElementById("buyWizard").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  document.getElementById("btnGetChallenge").addEventListener("click", async () => {
+    if (!currentListing) return;
+    const btn = document.getElementById("btnGetChallenge");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Asking server…';
+
+    // Build the x402 body — exactly the same one used for the retry.
+    const deadlineUnix = Math.floor(Date.now() / 1000) + 24 * 3600; // 24h
+    currentBuyBody = {
+      requester_did: BUYER_DID,
+      provider_did: currentListing.seller_did,
+      task: {
+        listing_id: currentListing.id,
+        listing_title: currentListing.title,
+        bought_at: new Date().toISOString(),
+      },
+      budget_usdc: parseFloat(currentListing.price_amount).toString(),
+      deadline_unix: deadlineUnix,
+      listing_id: currentListing.id,
+    };
+
+    try {
+      const resp = await fetch(`${API}/v1/x402/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentBuyBody),
+      });
+      if (resp.status !== 402) {
+        const t = await resp.text();
+        throw new Error(`expected 402, got ${resp.status}: ${t.slice(0, 300)}`);
+      }
+      const required = JSON.parse(resp.headers.get("X-Payment-Required") || "{}");
+      currentChallenge = required;
+      document.getElementById("challengeResult").innerHTML = `
+        <div class="buy-note" style="margin-top:10px;">
+          ✓ Got payment instructions. Proceed to step 3.
+        </div>
+      `;
+      // Mark steps done and reveal next ones.
+      document.getElementById("step2").classList.add("done");
+      revealStep3(required);
+    } catch (err) {
+      document.getElementById("challengeResult").innerHTML = `
+        <div class="error-box">Failed: ${escapeHtml(String(err))}</div>
+      `;
+      btn.disabled = false;
+      btn.innerHTML = "Get payment instructions →";
+    }
+  });
+
+  function revealStep3(required) {
+    const step3 = document.getElementById("step3");
+    step3.classList.remove("pending");
+    document.getElementById("step3Help").style.opacity = "1";
+    document.getElementById("step3Help").innerHTML = `
+      You need to broadcast two transactions on Base Sepolia: an ERC20
+      <code>approve</code> followed by <code>AgoraEscrow.createJob</code>.
+      Below are <code>cast</code> commands you can copy. Replace
+      <code>$YOUR_KEY</code> with your Sepolia wallet's private key
+      <strong>(use a fresh test key, never your real one)</strong>.
+    `;
+
+    const escrow = required.recipient_contract;
+    const usdc = required.asset.address;
+    const amount = required.amount;
+    const args = required.args;
+    const cmd1 = `cast send --rpc-url https://sepolia.base.org \\
+  --private-key $YOUR_KEY \\
+  ${usdc} \\
+  "approve(address,uint256)" ${escrow} ${amount}`;
+    const cmd2 = `cast send --rpc-url https://sepolia.base.org \\
+  --private-key $YOUR_KEY \\
+  ${escrow} \\
+  "createJob(address,uint256,bytes32,uint64)" \\
+  ${args.payee} ${args.amount} ${args.taskHash} ${args.deadline}`;
+
+    document.getElementById("step3Commands").innerHTML = `
+      <p style="margin-top:10px;"><strong>1. Approve USDC for the escrow:</strong></p>
+      <div class="code-block">${escapeHtml(cmd1)}<button class="copy-btn" data-copy="${encodeURIComponent(cmd1)}">Copy</button></div>
+      <p style="margin-top:12px;"><strong>2. Create the on-chain job (locks ${amount} smallest-unit USDC in escrow):</strong></p>
+      <div class="code-block">${escapeHtml(cmd2)}<button class="copy-btn" data-copy="${encodeURIComponent(cmd2)}">Copy</button></div>
+      <p style="margin-top:12px; font-size:0.82rem; color:var(--text-faint);">
+        After the second tx is mined, copy its <code>transactionHash</code> and paste it in step 4 below.
+      </p>
+    `;
+
+    // Wire up copy buttons
+    document.querySelectorAll(".copy-btn[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const text = decodeURIComponent(btn.dataset.copy);
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.classList.add("copied");
+          btn.textContent = "Copied!";
+          setTimeout(() => {
+            btn.classList.remove("copied");
+            btn.textContent = "Copy";
+          }, 1500);
+        } catch {
+          btn.textContent = "(use ctrl+c)";
+        }
+      });
+    });
+
+    revealStep4();
+  }
+
+  function revealStep4() {
+    document.getElementById("step4").classList.remove("pending");
+    document.getElementById("step4Help").style.opacity = "1";
+    document.getElementById("step4Help").innerHTML = `
+      Paste the <code>transactionHash</code> from the <code>createJob</code> call.
+      The server will verify it on Base Sepolia and link the job to this listing.
+    `;
+    document.getElementById("step4Input").innerHTML = `
+      <div class="tx-input-row">
+        <input type="text" id="txHashInput" placeholder="0x..." spellcheck="false" />
+        <button class="btn-verify" id="btnVerifyTx">Verify &amp; deliver</button>
+      </div>
+      <div id="verifyResult"></div>
+    `;
+    document.getElementById("btnVerifyTx").addEventListener("click", verifyAndDeliver);
+  }
+
+  async function verifyAndDeliver() {
+    const input = document.getElementById("txHashInput");
+    const txHash = input.value.trim();
+    if (!txHash.startsWith("0x") || txHash.length < 60) {
+      document.getElementById("verifyResult").innerHTML = `
+        <div class="error-box">That doesn't look like a tx hash. Should be 0x... 64 chars.</div>
+      `;
+      return;
+    }
+    const btn = document.getElementById("btnVerifyTx");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Verifying…';
+    document.getElementById("verifyResult").innerHTML = "";
+
+    try {
+      const resp = await fetch(`${API}/v1/x402/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Payment-Tx": txHash,
+        },
+        body: JSON.stringify(currentBuyBody),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${body.detail || JSON.stringify(body)}`);
+      }
+      // Job created. Mark step 4 done, fetch delivery.
+      document.getElementById("step4").classList.add("done");
+      document.getElementById("verifyResult").innerHTML = `
+        <div class="buy-note" style="margin-top:10px;">
+          ✓ Job <code>${body.id}</code> created — on-chain payment verified.
+        </div>
+      `;
+      await fetchDelivery(body.id);
+    } catch (err) {
+      document.getElementById("verifyResult").innerHTML = `
+        <div class="error-box">Verification failed: ${escapeHtml(String(err))}</div>
+      `;
+      btn.disabled = false;
+      btn.innerHTML = "Verify &amp; deliver";
+    }
+  }
+
+  async function fetchDelivery(jobId) {
+    if (!currentListing) return;
+    document.getElementById("step5").classList.remove("pending");
+    document.getElementById("step5Help").style.opacity = "1";
+    document.getElementById("step5Help").innerHTML = `
+      Fetching your deliverable…
+    `;
+    document.getElementById("deliveryResult").innerHTML = `<span class="spinner"></span>`;
+
+    try {
+      const resp = await fetch(
+        `${API}/v1/listings/${currentListing.id}/delivery?job_id=${jobId}`,
+      );
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.detail || `HTTP ${resp.status}`);
+      }
+      document.getElementById("step5").classList.add("done");
+      document.getElementById("step5Help").innerHTML = `
+        Your delivery is ready. ${
+          data.note ? `<br/><strong>Next:</strong> ${escapeHtml(data.note)}` : ""
+        }
+      `;
+      const contentDisplay = formatDelivery(data);
+      document.getElementById("deliveryResult").innerHTML = `
+        <div class="delivery-box">
+          <h4>📦 Delivery — ${escapeHtml(data.content_type || "content")}</h4>
+          <div class="delivery-content">${contentDisplay}</div>
+        </div>
+      `;
+    } catch (err) {
+      document.getElementById("deliveryResult").innerHTML = `
+        <div class="error-box">Couldn't fetch delivery: ${escapeHtml(String(err))}</div>
+      `;
+    }
+  }
+
+  function formatDelivery(data) {
+    const c = data.content;
+    if (!c) return "<em>(no content)</em>";
+    // Heuristic: show text if available, else pretty-printed JSON.
+    if (typeof c === "string") return escapeHtml(c);
+    if (c.text) return escapeHtml(c.text);
+    return escapeHtml(JSON.stringify(c, null, 2));
+  }
 
   // Initial load
   loadListings();

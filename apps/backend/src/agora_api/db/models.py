@@ -199,6 +199,13 @@ class Job(Base, TimestampMixin):
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Sprint 10c: marketplace purchase trail. When a job is created
+    # through the marketplace Buy flow, we record which Listing it came
+    # from so the delivery endpoint can release digital_content only to
+    # the legitimate buyer.
+    listing_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("listings.id"), nullable=True, index=True
+    )
 
 
 class LedgerBalance(Base, TimestampMixin):
