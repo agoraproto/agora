@@ -180,8 +180,9 @@ async def create_x402_job(
     await session.refresh(job)
 
     await enqueue_for_agent(
-        session=session,
-        agent_did=provider.did,
+        session,
+        agent=provider,
+        job_id=job.id,
         event_type="job.offered",
         payload=_job_view(job),
     )
