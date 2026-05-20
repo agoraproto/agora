@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
+import time
 from dataclasses import dataclass
 
 from nacl.signing import SigningKey, VerifyKey
@@ -89,3 +91,40 @@ class AgentIdentity:
                 }
             ]
         return doc
+
+    def sponsor_pledge(
+        self,
+        *,
+        new_agent_did: str,
+        stake_pledged: str = "5.00",
+        valid_for_seconds: int = 90 * 24 * 3600,
+    ) -> dict:
+        """Issue a sponsor pledge for a new agent (ADR 007).
+
+        Builds the canonical signing payload, signs it with this
+        identity's key, and returns the dict that goes straight into
+        `POST /v1/agents/register` under the `sponsor` field.
+
+        Use this only if `self` is a sponsor-eligible agent (trust
+        verified/trusted, ≥ 50 completed jobs); otherwise the API will
+        reject the resulting registration.
+        """
+        valid_until = int(time.time()) + valid_for_seconds
+        payload = json.dumps(
+            {
+                "agora_sponsor_version": 1,
+                "new_agent_did": new_agent_did,
+                "sponsor_did": self.did,
+                "stake_pledged": stake_pledged,
+                "valid_until_unix": valid_until,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = self.sign(payload)
+        return {
+            "sponsor_did": self.did,
+            "signature": base64.b64encode(signature).decode("ascii"),
+            "stake_pledged": stake_pledged,
+            "valid_until_unix": valid_until,
+        }

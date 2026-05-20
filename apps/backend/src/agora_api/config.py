@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Agora-owned wallet that signs createJob/release/refund when the
     # platform settles on behalf of an agent (e.g. via x402).
     agora_settler_private_key: str = ""
+    # Chain watcher: periodic background task that polls on-chain job
+    # status and reconciles the DB. Catches the case where a party calls
+    # AgoraEscrow directly (bypassing the x402 API) — we still observe
+    # and mirror their state change.
+    chain_watcher_enabled: bool = True
+    chain_watcher_interval_seconds: float = 30.0
 
     # Auth / Custody (Privy - ADR 005)
     privy_app_id: str = ""

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from .chain import chain_watcher_loop
 from .config import get_settings
 from .logging import configure_logging, get_logger
 from .rate_limit import limiter
@@ -24,18 +25,24 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("agora_api.startup", env=settings.app_env, chain_id=settings.chain_id)
     stop_event = asyncio.Event()
-    worker_task: asyncio.Task | None = None
+    background_tasks: list[asyncio.Task] = []
     if settings.webhook_worker_enabled:
-        worker_task = asyncio.create_task(worker_loop(stop_event), name="webhook-worker")
+        background_tasks.append(
+            asyncio.create_task(worker_loop(stop_event), name="webhook-worker")
+        )
+    if settings.chain_watcher_enabled and settings.enable_onchain_payments:
+        background_tasks.append(
+            asyncio.create_task(chain_watcher_loop(stop_event), name="chain-watcher")
+        )
     try:
         yield
     finally:
-        if worker_task is not None:
-            stop_event.set()
+        stop_event.set()
+        for task in background_tasks:
             try:
-                await asyncio.wait_for(worker_task, timeout=5.0)
+                await asyncio.wait_for(task, timeout=5.0)
             except TimeoutError:
-                worker_task.cancel()
+                task.cancel()
         log.info("agora_api.shutdown")
 
 

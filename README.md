@@ -21,7 +21,9 @@
 | Fee model (1 % / min 0.50 USDC / max 25 USDC) | ✅ verified live | 3/3 edge cases match Foundry tests |
 | Settlement asset | USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | HTTP API (off-chain ledger) | ✅ running | https://api.agoraproto.org/docs |
-| HTTP API (x402 on-chain endpoints) | ✅ live, full 4-stage lifecycle | `/v1/x402/quote`, `/v1/x402/jobs`, `…/jobs/{id}/result`, `…/jobs/{id}/approve`, `…/jobs/{id}/refund` ([openapi.json](https://api.agoraproto.org/v1/openapi.json)) |
+| HTTP API (x402 on-chain endpoints) | ✅ live, full 5-stage lifecycle | `/v1/x402/quote`, `/v1/x402/jobs`, `…/jobs/{id}/result`, `…/jobs/{id}/approve`, `…/jobs/{id}/refund`, `…/jobs/{id}/dispute` ([openapi.json](https://api.agoraproto.org/v1/openapi.json)) |
+| Chain watcher (DB ↔ on-chain reconciliation) | ✅ live as FastAPI lifespan task | polls `escrow.jobs(id)` for non-terminal jobs every 30 s |
+| ADR 007 Sponsor verification (Anti-Sybil) | ✅ enforced at registration | Ed25519 signature over canonical pledge; sponsor must be verified/trusted with ≥ 50 completed jobs |
 | Mainnet | ⏳ planned after Sepolia soak + audit | — |
 
 Milestone log:

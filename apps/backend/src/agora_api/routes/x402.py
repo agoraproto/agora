@@ -18,6 +18,10 @@ Inspired by the Coinbase x402 spec. The full job lifecycle is:
               first call:  402 + X-Payment-Required (refund args)
               retry:       200 with updated job row, status="refunded"
 
+  dispute → POST /v1/x402/jobs/{job_id}/dispute (either party)
+              first call:  402 + X-Payment-Required (dispute args)
+              retry:       200 with updated job row, status="disputed"
+
 Every "first call" returns a machine-readable 402 telling the agent the
 exact on-chain call to make. Every "retry" verifies the tx receipt on
 chain, double-checks the event args against what the API itself
@@ -42,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chain import get_escrow_client
 from ..config import get_settings
-from ..db import agents_repo, jobs_repo, reviews_repo
+from ..db import agents_repo, disputes_repo, jobs_repo, reviews_repo
 from ..db.base import get_session
 from ..db.models import Job, JobStatus
 from ..rate_limit import limiter
@@ -670,6 +674,142 @@ async def refund_x402_job(
                 agent=agent,
                 job_id=job.id,
                 event_type="job.refunded",
+                payload=payload,
+            )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Dispute path  (EITHER PARTY -> AgoraEscrow.dispute)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class X402DisputeRequest(BaseModel):
+    reason: str = Field(..., description="Short human-readable reason for the dispute")
+    raised_by_did: str = Field(
+        ..., description="DID of the party raising the dispute (must be party to the job)"
+    )
+    evidence: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Off-chain evidence stored in the disputes table; not committed on-chain.",
+    )
+
+
+@router.post(
+    "/jobs/{job_id}/dispute",
+    summary="Open a dispute on an on-chain job (either party)",
+)
+@limiter.limit("10/minute")
+async def dispute_x402_job(
+    request: Request,
+    job_id: str,
+    body: X402DisputeRequest,
+    session: AsyncSession = Depends(get_session),
+    x_payment_tx: str | None = Header(default=None, alias="X-Payment-Tx"),
+) -> Any:
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="on-chain settlement disabled (set enable_onchain_payments=true)",
+        )
+
+    job = await _load_onchain_job_or_404(session, job_id)
+
+    # Idempotent: if already disputed, just return.
+    if job.status == JobStatus.disputed:
+        return _job_view(job)
+    # Contract allows dispute in Funded (= DB 'offered') or Submitted.
+    if job.status not in (JobStatus.offered, JobStatus.submitted):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job {job_id} cannot be disputed from state "
+                f"{job.status.value}; expected 'offered' or 'submitted'"
+            ),
+        )
+
+    # Verify the raiser is party to this job.
+    raiser = await agents_repo.get_by_did(session, body.raised_by_did)
+    if raiser is None:
+        raise HTTPException(status_code=404, detail=f"raised_by_did {body.raised_by_did} unknown")
+    if raiser.id not in (job.requester_agent_id, job.provider_agent_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"agent {body.raised_by_did} is not a party to job {job_id}",
+        )
+
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: 402 with dispute() instructions ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "dispute",
+            "args": {
+                "jobId": str(onchain_job_id_int),
+                "reason": body.reason,
+            },
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrow.dispute with the parameters in "
+                "X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>. Only the payer or payee can "
+                "dispute; the contract enforces Unauthorized otherwise."
+            ),
+        )
+
+    # ── Step 2: verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    parsed = _find_event(receipt, client.escrow.events.JobDisputed)
+    if parsed is None:
+        raise HTTPException(status_code=402, detail="JobDisputed event missing")
+    if int(parsed["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch")
+
+    # Record the dispute in the disputes table for later resolution.
+    dispute = await disputes_repo.open_dispute(
+        session,
+        job=job,
+        raised_by_id=raiser.id,
+        reason=body.reason,
+        evidence=body.evidence,
+    )
+    job.status = JobStatus.disputed
+    await session.flush()
+
+    # Notify both sides.
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    provider = await agents_repo.get_by_id(session, job.provider_agent_id)
+    payload = {
+        **_job_view(job),
+        "reason": body.reason,
+        "raised_by": body.raised_by_did,
+        "dispute_id": str(dispute.id),
+    }
+    for agent in (requester, provider):
+        if agent is not None:
+            await enqueue_for_agent(
+                session,
+                agent=agent,
+                job_id=job.id,
+                event_type="job.disputed",
                 payload=payload,
             )
 

@@ -18,14 +18,29 @@ from ..config import get_settings
 from ..db import agents_repo
 from ..db.base import get_session
 from ..rate_limit import limiter
+from ..sponsor import SponsorshipInvalid, check_eligibility, verify_signature
 
 router = APIRouter()
 
 
 class SponsorSignature(BaseModel):
     sponsor_did: str
-    signature: str
-    stake_pledged: str | None = None
+    signature: str = Field(
+        ...,
+        description=(
+            "Base64-encoded Ed25519 signature over the canonical sponsor payload "
+            "(see docs/sponsor.md). The sponsor's signing key is recovered from "
+            "the publicKeyMultibase in their DID document."
+        ),
+    )
+    stake_pledged: str = Field(
+        default="5.00",
+        description="Amount in EUR the sponsor risks if the new agent gets banned within 90 days.",
+    )
+    valid_until_unix: int = Field(
+        ...,
+        description="Unix timestamp after which this sponsorship is invalid (ADR 007).",
+    )
 
 
 class CapabilityDecl(BaseModel):
@@ -85,6 +100,26 @@ async def register_agent(
             status_code=400,
             detail="minimum stake is 5 EUR (or provide a sponsor signature, ADR 007)",
         )
+
+    # ── Verify sponsor signature (ADR 007 Anti-Sybil) ────────────────
+    if payload.sponsor is not None:
+        sponsor_agent = await agents_repo.get_by_did(session, payload.sponsor.sponsor_did)
+        if sponsor_agent is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sponsor {payload.sponsor.sponsor_did} not found on Agora",
+            )
+        try:
+            check_eligibility(sponsor_agent)
+            verify_signature(
+                sponsor=sponsor_agent,
+                new_agent_did=did,
+                stake_pledged=payload.sponsor.stake_pledged,
+                valid_until_unix=payload.sponsor.valid_until_unix,
+                signature_b64=payload.sponsor.signature,
+            )
+        except SponsorshipInvalid as e:
+            raise HTTPException(status_code=400, detail=f"sponsorship rejected: {e}") from e
 
     try:
         agent, webhook_secret = await agents_repo.create(

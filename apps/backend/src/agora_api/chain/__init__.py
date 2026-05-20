@@ -6,5 +6,6 @@ mode keeps working without any of this.
 """
 
 from .escrow import AgoraEscrowClient, OnchainJob, get_escrow_client
+from .watcher import chain_watcher_loop
 
-__all__ = ["AgoraEscrowClient", "OnchainJob", "get_escrow_client"]
+__all__ = ["AgoraEscrowClient", "OnchainJob", "chain_watcher_loop", "get_escrow_client"]

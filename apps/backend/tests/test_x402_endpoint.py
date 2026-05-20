@@ -44,7 +44,12 @@ def _ag(did: str, *, name: str, payout: str | None) -> Agent:
 
 
 @pytest.mark.asyncio
-async def test_quote_503_when_onchain_disabled(client, session) -> None:
+async def test_quote_503_when_onchain_disabled(client, session, monkeypatch) -> None:
+    # Explicit override — in production the .env enables on-chain, so we
+    # must shadow `get_escrow_client` to return None here. This is the
+    # surface contract the test asserts: "when no escrow client is
+    # available, the endpoint short-circuits with 503".
+    monkeypatch.setattr(x402_module, "get_escrow_client", lambda: None)
     session.add(_ag("did:agora:p1", name="echo", payout="0x" + "1" * 40))
     await session.commit()
     r = await client.post(
@@ -55,7 +60,8 @@ async def test_quote_503_when_onchain_disabled(client, session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_jobs_503_when_onchain_disabled(client) -> None:
+async def test_jobs_503_when_onchain_disabled(client, monkeypatch) -> None:
+    monkeypatch.setattr(x402_module, "get_escrow_client", lambda: None)
     r = await client.post(
         "/v1/x402/jobs",
         json={

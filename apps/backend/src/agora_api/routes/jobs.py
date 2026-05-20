@@ -59,6 +59,37 @@ async def _load_job_or_404(session: AsyncSession, job_id: str) -> Job:
     return job
 
 
+def _ensure_offchain(job: Job, *, x402_path: str | None = None) -> None:
+    """Reject on-chain jobs from off-chain lifecycle routes.
+
+    On-chain jobs (settlement_mode='onchain') must travel through the
+    `/v1/x402/jobs/{id}/*` endpoints so the server can verify the
+    real-state-change happened on the chain before mutating the DB.
+    Trying to drive them through the ledger routes would either no-op
+    or corrupt the bookkeeping.
+
+    `x402_path` is the suffix of the equivalent x402 endpoint to point
+    callers at (e.g. "result", "approve", "refund"). Pass None if no
+    direct analog exists (e.g. for accept/reject on a job whose on-chain
+    flow goes straight from Funded to Submitted).
+    """
+    if job.settlement_mode != "onchain":
+        return
+    if x402_path:
+        detail = (
+            f"job {job.id} is on-chain (settlement_mode=onchain); use "
+            f"POST /v1/x402/jobs/{job.id}/{x402_path} instead — that route "
+            f"verifies the on-chain side effect before mutating state."
+        )
+    else:
+        detail = (
+            f"job {job.id} is on-chain (settlement_mode=onchain); the "
+            f"on-chain lifecycle has no equivalent of this action. See "
+            f"/v1/x402/jobs/{job.id}/result, /approve, /refund."
+        )
+    raise HTTPException(status_code=409, detail=detail)
+
+
 async def _get_agent_by_id(session: AsyncSession, agent_id: uuid.UUID) -> Agent:
     return (await session.execute(select(Agent).where(Agent.id == agent_id))).scalar_one()
 
@@ -140,6 +171,7 @@ async def accept_job(
     job_id: str, session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
+    _ensure_offchain(job)
     try:
         await jobs_repo.transition(session, job, JobStatus.accepted)
     except IllegalTransition as e:
@@ -162,6 +194,7 @@ async def reject_job(
     job_id: str, session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
+    _ensure_offchain(job, x402_path="refund")
     if job.status != JobStatus.offered:
         raise HTTPException(
             status_code=409, detail=f"can only reject 'offered' jobs (was {job.status.value})"
@@ -189,6 +222,7 @@ async def submit_result(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
+    _ensure_offchain(job, x402_path="result")
     try:
         await jobs_repo.transition(session, job, JobStatus.submitted)
     except IllegalTransition as e:
@@ -212,6 +246,7 @@ async def approve_job(
     job_id: str, session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
+    _ensure_offchain(job, x402_path="approve")
     if job.status != JobStatus.submitted:
         raise HTTPException(
             status_code=409,
@@ -264,6 +299,7 @@ async def open_dispute(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     job = await _load_job_or_404(session, job_id)
+    _ensure_offchain(job, x402_path="dispute")
     if job.status not in (JobStatus.accepted, JobStatus.in_progress, JobStatus.submitted):
         raise HTTPException(
             status_code=409, detail=f"cannot dispute from state {job.status.value}"
