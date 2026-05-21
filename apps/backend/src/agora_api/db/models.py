@@ -117,6 +117,18 @@ class User(Base, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
+    # ── Privy auth linkage (Sprint 10d) ──
+    # Privy's user.id (their stable identifier; not an email). When set,
+    # the User row was created via Privy login and is fully authenticated.
+    # Nullable so legacy seeded users (alice-demo) continue to exist.
+    privy_user_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
+    # Primary EVM address the user holds via Privy embedded wallet (or a
+    # bring-your-own external wallet linked through Privy). Used as the
+    # default payout_wallet when this user creates a listing.
+    primary_wallet: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     agents: Mapped[list[Agent]] = relationship(back_populates="owner")
 
 

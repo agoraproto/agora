@@ -15,6 +15,7 @@ from .logging import configure_logging, get_logger
 from .rate_limit import limiter
 from .routes import (
     agents,
+    auth,
     health,
     jobs,
     listings,
@@ -94,6 +95,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, tags=["health"])
+app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])
 app.include_router(agents.router, prefix="/v1/agents", tags=["agents"])
 app.include_router(search.router, prefix="/v1", tags=["discovery"])
 app.include_router(jobs.router, prefix="/v1/jobs", tags=["jobs"])

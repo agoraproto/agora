@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sell on Agora — list AI services & digital products in USDC</title>
+<meta name="description" content="Create a marketplace listing in 60 seconds. Sell AI services or digital products; get paid in USDC on Base." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23facc15'/><text x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='22' font-weight='bold' fill='%230c0a09'>A</text></svg>" />
+<style>
+  :root {
+    --bg: #0c0a09;
+    --bg-elev: #14110f;
+    --surface: #1c1917;
+    --surface-2: #292524;
+    --border: #44403c;
+    --border-soft: #2a2724;
+    --text: #fafaf9;
+    --text-dim: #a8a29e;
+    --text-faint: #78716c;
+    --accent: #facc15;
+    --accent-dim: #ca8a04;
+    --accent-soft: rgba(250, 204, 21, 0.12);
+    --success: #4ade80;
+    --warn: #fb923c;
+    --info: #60a5fa;
+    --pink: #f472b6;
+    --teal: #2dd4bf;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { opacity: 0.8; }
+  button { font-family: inherit; cursor: pointer; }
+  code { font-family: var(--mono); font-size: 0.9em; }
+
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(12px);
+    background: rgba(12,10,9,0.85);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    max-width: 1280px; margin: 0 auto;
+    padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 1.15rem; color: var(--text);
+  }
+  .logo-mark {
+    width: 32px; height: 32px; border-radius: 7px;
+    background: var(--accent); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: Georgia, serif; font-weight: bold; font-size: 22px;
+  }
+  .nav-links {
+    display: flex; gap: 22px; list-style: none; align-items: center;
+  }
+  .nav-links a { color: var(--text-dim); font-size: 0.95rem; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-links a.active { color: var(--accent); }
+  @media (max-width: 720px) {
+    .nav-links li.hide-mobile { display: none; }
+  }
+
+  .container {
+    max-width: 1080px; margin: 0 auto;
+    padding: 32px 28px 64px;
+  }
+
+  .page-head {
+    margin-bottom: 28px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 20px; flex-wrap: wrap;
+  }
+  .page-head h1 {
+    font-size: 2rem; line-height: 1.1; letter-spacing: -0.01em;
+  }
+  .page-head p {
+    color: var(--text-dim); font-size: 1rem; margin-top: 6px;
+  }
+
+  .btn-primary {
+    background: var(--accent); color: var(--bg);
+    border: none; padding: 11px 20px; border-radius: 8px;
+    font-weight: 600; font-size: 0.95rem;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); padding: 9px 16px; border-radius: 7px;
+    font-size: 0.9rem;
+  }
+  .btn-secondary:hover { border-color: var(--accent); }
+
+  .empty-state {
+    background: var(--bg-elev); border: 1px dashed var(--border);
+    border-radius: 12px; padding: 48px 32px;
+    text-align: center;
+  }
+  .empty-state h2 { font-size: 1.3rem; margin-bottom: 8px; }
+  .empty-state p { color: var(--text-dim); margin-bottom: 18px; }
+
+  .listing-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .listing-card {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .listing-card .ltype {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+  .listing-card h3 { font-size: 1.05rem; }
+  .listing-card .desc {
+    color: var(--text-dim); font-size: 0.85rem;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .listing-card .meta {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 6px;
+  }
+  .listing-card .price {
+    font-weight: 700; color: var(--accent); font-size: 1.05rem;
+  }
+  .listing-card .sales {
+    color: var(--text-faint); font-size: 0.8rem;
+  }
+  .listing-card .actions {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .listing-card .actions button {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-dim); padding: 7px 0; border-radius: 6px;
+    font-size: 0.8rem;
+  }
+  .listing-card .actions button:hover { border-color: var(--accent); color: var(--text); }
+  .listing-card .status-badge {
+    display: inline-block; padding: 3px 8px;
+    border-radius: 99px; font-size: 0.7rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .status-active { background: rgba(74,222,128,0.15); color: var(--success); }
+  .status-archived { background: rgba(120,113,108,0.2); color: var(--text-faint); }
+  .status-paused { background: rgba(251,146,60,0.15); color: var(--warn); }
+
+  /* ─── Modal (form) ───────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.7);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 14px; max-width: 640px; width: 100%;
+    max-height: 88vh; overflow-y: auto;
+    padding: 28px; position: relative;
+  }
+  .modal h2 { font-size: 1.4rem; margin-bottom: 8px; }
+  .modal .sub { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 22px; }
+  .modal-close {
+    position: absolute; top: 14px; right: 14px;
+    background: transparent; border: 0; color: var(--text-faint);
+    font-size: 1.4rem;
+  }
+
+  .form-row { margin-bottom: 16px; }
+  .form-row label {
+    display: block; font-size: 0.85rem; color: var(--text-dim);
+    margin-bottom: 6px; font-weight: 500;
+  }
+  .form-row input, .form-row textarea, .form-row select {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 7px;
+    font-size: 0.95rem; font-family: inherit;
+  }
+  .form-row textarea { min-height: 90px; resize: vertical; }
+  .form-row input:focus, .form-row textarea:focus, .form-row select:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .form-hint {
+    color: var(--text-faint); font-size: 0.78rem; margin-top: 4px;
+  }
+  .form-grid-2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 600px) {
+    .form-grid-2 { grid-template-columns: 1fr; }
+  }
+  .form-actions {
+    display: flex; gap: 10px; justify-content: flex-end;
+    margin-top: 18px;
+  }
+  .error-box {
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4);
+    color: #fca5a5; padding: 10px 14px; border-radius: 7px;
+    font-size: 0.85rem; margin-bottom: 12px;
+  }
+  .success-box {
+    background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.4);
+    color: var(--success); padding: 10px 14px; border-radius: 7px;
+    font-size: 0.85rem; margin-bottom: 12px;
+  }
+
+  .conditional { display: none; }
+  .conditional.shown { display: block; }
+
+  footer {
+    padding: 32px 28px; color: var(--text-faint);
+    font-size: 0.85rem; text-align: center;
+    border-top: 1px solid var(--border); margin-top: 40px;
+  }
+
+  /* ─── Auth widget (same as marketplace.html) ───────────────── */
+  .btn-login {
+    background: var(--accent); color: var(--bg); border: none;
+    padding: 8px 16px; border-radius: 7px;
+    font-weight: 600; font-size: 0.9rem;
+  }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 6px 12px 6px 8px; border-radius: 999px;
+    font-size: 0.85rem; color: var(--text);
+  }
+  .user-chip .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: var(--bg);
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 0.7rem;
+  }
+  .user-chip .logout {
+    color: var(--text-faint); cursor: pointer;
+    margin-left: 4px; border: 0; background: transparent;
+  }
+  .auth-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 1000;
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .auth-modal-backdrop.open { display: flex; }
+  .auth-modal {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 14px; max-width: 420px; width: 100%;
+    padding: 28px; position: relative;
+  }
+  .auth-modal h2 { margin: 0 0 8px; font-size: 1.3rem; }
+  .auth-modal p.sub {
+    color: var(--text-dim); font-size: 0.9rem; margin-bottom: 18px;
+  }
+  .auth-modal .auth-method {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 12px 14px; border-radius: 9px;
+    font-size: 0.95rem; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .auth-modal .auth-method:hover { border-color: var(--accent); }
+  .auth-modal .auth-divider {
+    text-align: center; color: var(--text-faint);
+    font-size: 0.75rem; margin: 12px 0;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .auth-modal input[type=email] {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 11px 14px; border-radius: 9px;
+    font-size: 0.95rem; margin-bottom: 10px; font-family: inherit;
+  }
+  .auth-modal .auth-close {
+    position: absolute; top: 14px; right: 14px;
+    background: transparent; border: 0;
+    color: var(--text-faint); font-size: 1.4rem;
+  }
+  .auth-error {
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4);
+    color: #fca5a5; padding: 9px 12px; border-radius: 7px;
+    font-size: 0.85rem; margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="logo">
+      <span class="logo-mark">A</span>
+      <span>Agora</span>
+    </a>
+    <ul class="nav-links">
+      <li class="hide-mobile"><a href="/#how">Protocol</a></li>
+      <li><a href="/marketplace.html">Marketplace</a></li>
+      <li><a href="/sell.html" class="active">Sell</a></li>
+      <li class="hide-mobile"><a href="https://api.agoraproto.org/docs">API</a></li>
+      <li><a href="https://github.com/agoraproto/agora">GitHub →</a></li>
+      <li id="authSlot">
+        <button class="btn-login" id="btnOpenLogin">Login</button>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+<div class="auth-modal-backdrop" id="authModal">
+  <div class="auth-modal">
+    <button class="auth-close" id="authClose">&times;</button>
+    <h2>Login to Agora</h2>
+    <p class="sub">Required to create or manage listings. Your wallet stays in your control.</p>
+    <div id="authError"></div>
+    <button class="auth-method" id="authConnectWallet"><span>🦊</span> Connect Wallet</button>
+    <button class="auth-method" id="authGoogle"><span>🅖</span> Continue with Google (coming soon)</button>
+    <div class="auth-divider">— or —</div>
+    <input type="email" id="authEmail" placeholder="you@example.com" />
+    <button class="auth-method" id="authEmailContinue" style="justify-content: center; background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600;">Continue with Email</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="page-head">
+    <div>
+      <h1>Sell on Agora</h1>
+      <p>List AI services or digital products. Get paid in USDC on Base.</p>
+    </div>
+    <button class="btn-primary" id="btnNewListing" style="display:none;">+ New Listing</button>
+  </div>
+
+  <div id="content">
+    <!-- Filled by JS — either auth-required prompt, empty state, or listing grid. -->
+  </div>
+</div>
+
+<!-- Listing form modal -->
+<div class="modal-backdrop" id="formModal">
+  <div class="modal">
+    <button class="modal-close" id="formClose">&times;</button>
+    <h2 id="formTitle">Create a listing</h2>
+    <p class="sub">All fields can be edited later by archiving and re-creating the listing.</p>
+
+    <div id="formAlert"></div>
+
+    <form id="listingForm">
+      <div class="form-row">
+        <label>Listing type</label>
+        <select id="lType" required>
+          <option value="digital_product">Digital product (file, prompt, dataset, …)</option>
+          <option value="service">AI service (the buyer requests something to be done)</option>
+        </select>
+        <div class="form-hint">Digital products deliver instantly on payment. Services require you to fulfill the order.</div>
+      </div>
+
+      <div class="form-row">
+        <label>Title</label>
+        <input type="text" id="lTitle" required maxlength="255" placeholder="e.g. Cold-email subject lines that get 60%+ open rate" />
+      </div>
+
+      <div class="form-row">
+        <label>Description</label>
+        <textarea id="lDescription" placeholder="What the buyer gets, and what makes it good."></textarea>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="form-row">
+          <label>Price (USDC)</label>
+          <input type="number" id="lPrice" required step="0.01" min="0.01" placeholder="2.50" />
+        </div>
+        <div class="form-row">
+          <label>Category</label>
+          <select id="lCategory">
+            <option value="prompts">prompts</option>
+            <option value="datasets">datasets</option>
+            <option value="custom-gpts">custom-gpts</option>
+            <option value="translation">translation</option>
+            <option value="image-gen">image-gen</option>
+            <option value="code-review">code-review</option>
+            <option value="fact-check">fact-check</option>
+            <option value="other" selected>other</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Digital-product-specific -->
+      <div id="digitalFields" class="conditional shown">
+        <div class="form-row">
+          <label>Content type</label>
+          <select id="lContentType">
+            <option value="text/markdown">text/markdown (rendered as text)</option>
+            <option value="text/plain">text/plain</option>
+            <option value="application/json">application/json</option>
+            <option value="file_url">file_url (link to external file)</option>
+          </select>
+        </div>
+        <div class="form-row" id="textContentRow">
+          <label>Content</label>
+          <textarea id="lContentText" placeholder="Paste the deliverable text/markdown/JSON here. Buyers receive this verbatim after payment."></textarea>
+          <div class="form-hint">For JSON, paste valid JSON. For file_url, paste a public URL.</div>
+        </div>
+      </div>
+
+      <!-- Service-specific -->
+      <div id="serviceFields" class="conditional">
+        <div class="form-row">
+          <label>Capability tag</label>
+          <input type="text" id="lCapability" placeholder="e.g. Translation" />
+          <div class="form-hint">Lets agents and humans find your service by capability.</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Payout wallet (EVM address)</label>
+        <input type="text" id="lWallet" placeholder="0x… (defaults to your primary wallet if logged in via wallet)" />
+        <div class="form-hint">USDC payouts go here when buyers approve their escrow.</div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="formCancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="formSubmit">Publish listing</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<footer>
+  Agora · open marketplace protocol · <a href="/">landing</a> · <a href="/marketplace.html">marketplace</a> · <a href="https://github.com/agoraproto/agora">source</a>
+</footer>
+
+<script>
+  const API = "https://api.agoraproto.org";
+
+  // ── Auth (shared logic with marketplace.html) ──
+  let AGORA_AUTH = null;
+  try {
+    const raw = sessionStorage.getItem("agora_auth");
+    if (raw) AGORA_AUTH = JSON.parse(raw);
+  } catch { AGORA_AUTH = null; }
+
+  function authHeaders() {
+    if (!AGORA_AUTH) return {};
+    const h = { "Authorization": "Bearer " + AGORA_AUTH.token };
+    if (AGORA_AUTH.email) h["X-Privy-Email"] = AGORA_AUTH.email;
+    if (AGORA_AUTH.primary_wallet) h["X-Privy-Wallet"] = AGORA_AUTH.primary_wallet;
+    return h;
+  }
+
+  function persistAuth() {
+    if (AGORA_AUTH) sessionStorage.setItem("agora_auth", JSON.stringify(AGORA_AUTH));
+    else sessionStorage.removeItem("agora_auth");
+    renderAuthSlot();
+    renderPage();
+  }
+
+  function renderAuthSlot() {
+    const slot = document.getElementById("authSlot");
+    if (!AGORA_AUTH) {
+      slot.innerHTML = '<button class="btn-login" id="btnOpenLogin">Login</button>';
+      document.getElementById("btnOpenLogin").addEventListener("click", openAuthModal);
+      return;
+    }
+    const label = AGORA_AUTH.email || (AGORA_AUTH.primary_wallet
+      ? AGORA_AUTH.primary_wallet.slice(0,6) + "…" + AGORA_AUTH.primary_wallet.slice(-4)
+      : AGORA_AUTH.did.split(":").pop().slice(0, 8));
+    const initial = (label[0] || "?").toUpperCase();
+    slot.innerHTML = `
+      <span class="user-chip">
+        <span class="avatar">${initial}</span><span>${label}</span>
+        <button class="logout" id="btnLogout" title="Logout">×</button>
+      </span>`;
+    document.getElementById("btnLogout").addEventListener("click", () => {
+      AGORA_AUTH = null; persistAuth();
+    });
+  }
+
+  function openAuthModal() {
+    document.getElementById("authError").innerHTML = "";
+    document.getElementById("authModal").classList.add("open");
+  }
+  function closeAuthModal() {
+    document.getElementById("authModal").classList.remove("open");
+  }
+  function authError(msg) {
+    document.getElementById("authError").innerHTML = `<div class="auth-error">${msg}</div>`;
+  }
+
+  async function syncAuth(token, hints) {
+    const resp = await fetch(`${API}/v1/auth/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token,
+        ...(hints.email ? { "X-Privy-Email": hints.email } : {}),
+        ...(hints.primary_wallet ? { "X-Privy-Wallet": hints.primary_wallet } : {}),
+      },
+      body: JSON.stringify({
+        email: hints.email || null,
+        primary_wallet: hints.primary_wallet || null,
+        display_name: hints.display_name || null,
+      }),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => "");
+      throw new Error(`auth/sync failed: ${resp.status} ${t.slice(0,200)}`);
+    }
+    return resp.json();
+  }
+
+  async function sha256Short(s) {
+    const buf = new TextEncoder().encode(s);
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const arr = Array.from(new Uint8Array(hash)).slice(0, 8);
+    return arr.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function loginEmail(email) {
+    const cleaned = (email || "").trim().toLowerCase();
+    if (!cleaned || !cleaned.includes("@")) { authError("Valid email required."); return; }
+    const id = "email-" + (await sha256Short(cleaned));
+    const token = `agora-dev:${id}`;
+    try {
+      const u = await syncAuth(token, { email: cleaned, display_name: cleaned });
+      AGORA_AUTH = { token, did: u.did, email: u.email, primary_wallet: u.primary_wallet };
+      persistAuth(); closeAuthModal();
+    } catch (e) { authError(String(e)); }
+  }
+
+  async function loginWallet() {
+    if (!window.ethereum) { authError("No browser wallet detected."); return; }
+    try {
+      const accs = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const addr = accs && accs[0];
+      if (!addr) { authError("No wallet address returned."); return; }
+      const id = "wallet-" + addr.toLowerCase();
+      const token = `agora-dev:${id}`;
+      const u = await syncAuth(token, { primary_wallet: addr });
+      AGORA_AUTH = { token, did: u.did, email: u.email, primary_wallet: u.primary_wallet || addr };
+      persistAuth(); closeAuthModal();
+    } catch (e) { authError(String(e.message || e)); }
+  }
+
+  // ── Page rendering ──
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function fmtPrice(amount) {
+    const n = parseFloat(amount);
+    if (Number.isNaN(n)) return amount;
+    return n.toFixed(2).replace(/\.?0+$/, "");
+  }
+
+  function renderPage() {
+    const c = document.getElementById("content");
+    const btnNew = document.getElementById("btnNewListing");
+    if (!AGORA_AUTH) {
+      btnNew.style.display = "none";
+      c.innerHTML = `
+        <div class="empty-state">
+          <h2>Login required to sell</h2>
+          <p>Create an account to publish listings, track sales, and receive USDC payouts.</p>
+          <button class="btn-primary" id="emptyLoginBtn">Login or sign up</button>
+        </div>`;
+      document.getElementById("emptyLoginBtn").addEventListener("click", openAuthModal);
+      return;
+    }
+    btnNew.style.display = "inline-block";
+    c.innerHTML = `<div id="myListings"><p style="color:var(--text-dim);">Loading your listings…</p></div>`;
+    loadMyListings();
+  }
+
+  async function loadMyListings() {
+    try {
+      const resp = await fetch(`${API}/v1/auth/my-listings`, { headers: authHeaders() });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const c = document.getElementById("myListings");
+      if (!data.listings.length) {
+        c.innerHTML = `
+          <div class="empty-state">
+            <h2>No listings yet</h2>
+            <p>Hit “+ New Listing” to publish your first one. It takes about a minute.</p>
+          </div>`;
+        return;
+      }
+      c.innerHTML = `<div class="listing-grid">${data.listings.map(renderCard).join("")}</div>`;
+      // Wire up archive buttons
+      c.querySelectorAll("[data-archive]").forEach(b =>
+        b.addEventListener("click", () => archiveListing(b.dataset.archive))
+      );
+    } catch (e) {
+      document.getElementById("myListings").innerHTML =
+        `<div class="error-box">Couldn't load: ${escapeHtml(String(e))}</div>`;
+    }
+  }
+
+  function renderCard(L) {
+    const status = L.status || "active";
+    const statusClass = status === "archived" ? "status-archived"
+      : status === "paused" ? "status-paused" : "status-active";
+    return `
+      <div class="listing-card">
+        <div class="ltype">${escapeHtml(L.listing_type || "")}</div>
+        <h3>${escapeHtml(L.title)}</h3>
+        <div class="desc">${escapeHtml(L.description || "—")}</div>
+        <div class="meta">
+          <span class="price">${fmtPrice(L.price_amount)} USDC</span>
+          <span class="sales">${L.sales_count || 0} sale${L.sales_count === 1 ? "" : "s"}</span>
+        </div>
+        <div><span class="status-badge ${statusClass}">${status}</span></div>
+        ${status !== "archived" ? `
+          <div class="actions">
+            <button data-archive="${L.id}">Archive</button>
+          </div>` : ""}
+      </div>`;
+  }
+
+  async function archiveListing(id) {
+    if (!confirm("Archive this listing? It'll be hidden from the marketplace but existing orders are unaffected.")) return;
+    try {
+      const resp = await fetch(`${API}/v1/listings/${id}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${t.slice(0,200)}`);
+      }
+      loadMyListings();
+    } catch (e) {
+      alert("Failed to archive: " + e);
+    }
+  }
+
+  // ── Form modal ──
+  function openForm() {
+    document.getElementById("formAlert").innerHTML = "";
+    document.getElementById("listingForm").reset();
+    // Pre-fill wallet
+    if (AGORA_AUTH && AGORA_AUTH.primary_wallet)
+      document.getElementById("lWallet").value = AGORA_AUTH.primary_wallet;
+    syncConditionals();
+    document.getElementById("formModal").classList.add("open");
+  }
+  function closeForm() {
+    document.getElementById("formModal").classList.remove("open");
+  }
+  function syncConditionals() {
+    const t = document.getElementById("lType").value;
+    document.getElementById("digitalFields").classList.toggle("shown", t === "digital_product");
+    document.getElementById("serviceFields").classList.toggle("shown", t === "service");
+  }
+
+  async function submitListing(e) {
+    e.preventDefault();
+    document.getElementById("formAlert").innerHTML = "";
+    const type = document.getElementById("lType").value;
+    const body = {
+      listing_type: type,
+      title: document.getElementById("lTitle").value.trim(),
+      description: document.getElementById("lDescription").value.trim(),
+      category: document.getElementById("lCategory").value,
+      tags: [],
+      price_amount: document.getElementById("lPrice").value,
+      price_currency: "USDC",
+      payout_wallet: document.getElementById("lWallet").value.trim() || null,
+    };
+    if (type === "digital_product") {
+      const contentType = document.getElementById("lContentType").value;
+      const text = document.getElementById("lContentText").value;
+      body.digital_content_type = contentType;
+      if (contentType === "application/json") {
+        try { body.digital_content = JSON.parse(text); }
+        catch (e) {
+          document.getElementById("formAlert").innerHTML = `<div class="error-box">Invalid JSON in content: ${escapeHtml(String(e))}</div>`;
+          return;
+        }
+      } else if (contentType === "file_url") {
+        body.digital_content = { url: text.trim() };
+      } else {
+        body.digital_content = { text };
+      }
+    } else {
+      const cap = document.getElementById("lCapability").value.trim();
+      if (!cap) {
+        document.getElementById("formAlert").innerHTML = `<div class="error-box">Capability tag required for service listings.</div>`;
+        return;
+      }
+      body.service_capability = cap;
+    }
+
+    const btn = document.getElementById("formSubmit");
+    btn.disabled = true; btn.textContent = "Publishing…";
+    try {
+      const resp = await fetch(`${API}/v1/listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${data.detail || JSON.stringify(data)}`);
+      }
+      document.getElementById("formAlert").innerHTML =
+        `<div class="success-box">Listing published! ID: <code>${data.id}</code></div>`;
+      setTimeout(() => { closeForm(); loadMyListings(); }, 1200);
+    } catch (e) {
+      document.getElementById("formAlert").innerHTML =
+        `<div class="error-box">${escapeHtml(String(e))}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = "Publish listing";
+    }
+  }
+
+  // ── Wire up ──
+  window.addEventListener("DOMContentLoaded", () => {
+    renderAuthSlot(); renderPage();
+    document.getElementById("authClose").addEventListener("click", closeAuthModal);
+    document.getElementById("authModal").addEventListener("click", (e) => {
+      if (e.target.id === "authModal") closeAuthModal();
+    });
+    document.getElementById("authEmailContinue").addEventListener("click", () =>
+      loginEmail(document.getElementById("authEmail").value));
+    document.getElementById("authEmail").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loginEmail(document.getElementById("authEmail").value);
+    });
+    document.getElementById("authConnectWallet").addEventListener("click", loginWallet);
+    document.getElementById("authGoogle").addEventListener("click", () =>
+      authError("Google login is coming soon — use email or wallet for now."));
+
+    document.getElementById("btnNewListing").addEventListener("click", openForm);
+    document.getElementById("formClose").addEventListener("click", closeForm);
+    document.getElementById("formCancel").addEventListener("click", closeForm);
+    document.getElementById("formModal").addEventListener("click", (e) => {
+      if (e.target.id === "formModal") closeForm();
+    });
+    document.getElementById("lType").addEventListener("change", syncConditionals);
+    document.getElementById("listingForm").addEventListener("submit", submitListing);
+  });
+</script>
+</body>
+</html>

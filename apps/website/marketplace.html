@@ -700,6 +700,140 @@
     margin-top: 40px;
   }
   footer a { color: var(--text-dim); }
+
+  /* ─── Auth (Sprint 10d) ───────────────────────────────── */
+  .btn-login {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: opacity 0.15s;
+  }
+  .btn-login:hover { opacity: 0.9; }
+  .user-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 6px 12px 6px 8px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .user-chip .avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 0.7rem;
+  }
+  .user-chip .logout {
+    color: var(--text-faint);
+    cursor: pointer;
+    margin-left: 4px;
+    border: 0;
+    background: transparent;
+  }
+  .user-chip .logout:hover { color: var(--text); }
+
+  .auth-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .auth-modal-backdrop.open { display: flex; }
+  .auth-modal {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    max-width: 420px;
+    width: 100%;
+    padding: 28px;
+  }
+  .auth-modal h2 {
+    margin: 0 0 8px;
+    font-size: 1.3rem;
+  }
+  .auth-modal p.sub {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 18px;
+  }
+  .auth-modal .auth-method {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 9px;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: border-color 0.15s;
+  }
+  .auth-modal .auth-method:hover { border-color: var(--accent); }
+  .auth-modal .auth-divider {
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 0.75rem;
+    margin: 12px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .auth-modal input[type=email] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 11px 14px;
+    border-radius: 9px;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+    font-family: inherit;
+  }
+  .auth-modal input[type=email]:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .auth-modal .auth-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: transparent;
+    border: 0;
+    color: var(--text-faint);
+    font-size: 1.4rem;
+    cursor: pointer;
+  }
+  .auth-error {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.4);
+    color: #fca5a5;
+    padding: 9px 12px;
+    border-radius: 7px;
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+  }
+  .auth-note {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    margin-top: 14px;
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -716,12 +850,49 @@
     <ul class="nav-links">
       <li class="hide-mobile"><a href="/#how">Protocol</a></li>
       <li><a href="/marketplace.html" class="active">Marketplace</a></li>
-      <li class="hide-mobile"><a href="/#receipts">Receipts</a></li>
+      <li><a href="/sell.html">Sell</a></li>
       <li class="hide-mobile"><a href="https://api.agoraproto.org/docs">API</a></li>
       <li><a href="https://github.com/agoraproto/agora">GitHub →</a></li>
+      <li id="authSlot">
+        <button class="btn-login" id="btnOpenLogin">Login</button>
+      </li>
     </ul>
   </div>
 </nav>
+
+<!-- ════════════════════════════════════════════════════════════
+     AUTH MODAL (Sprint 10d)
+════════════════════════════════════════════════════════════ -->
+<div class="auth-modal-backdrop" id="authModal">
+  <div class="auth-modal" style="position: relative;">
+    <button class="auth-close" id="authClose">&times;</button>
+    <h2>Login to Agora</h2>
+    <p class="sub">Required to buy or sell on the marketplace. Your wallet stays in your control — Agora never holds your funds.</p>
+    <div id="authError"></div>
+
+    <button class="auth-method" id="authConnectWallet">
+      <span>🦊</span> Connect Wallet (MetaMask / WalletConnect)
+    </button>
+    <button class="auth-method" id="authGoogle">
+      <span>🅖</span> Continue with Google (coming soon)
+    </button>
+
+    <div class="auth-divider">— or —</div>
+
+    <input type="email" id="authEmail" placeholder="you@example.com" />
+    <button class="auth-method" id="authEmailContinue" style="justify-content: center; background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600;">
+      Continue with Email
+    </button>
+
+    <p class="auth-note">
+      Testnet preview. In production this modal is powered by Privy
+      (Email magic link, Google SSO, MetaMask, WalletConnect). For now,
+      email login uses a dev session that lets you browse and buy with
+      a stable identity — switch to a wallet to actually broadcast
+      payments.
+    </p>
+  </div>
+</div>
 
 <!-- ════════════════════════════════════════════════════════════
      HEADER
@@ -902,6 +1073,181 @@
 ════════════════════════════════════════════════════════════ -->
 <script>
   const API = "https://api.agoraproto.org";
+
+  // ══════════════════════════════════════════════════════════
+  //  Auth (Sprint 10d)
+  // ══════════════════════════════════════════════════════════
+  //
+  // The frontend keeps a single AGORA_AUTH object in sessionStorage:
+  //   { token, did, email, primary_wallet }
+  //
+  // `token` is what we send as `Authorization: Bearer ...`. In dev /
+  // testnet mode the token is a hand-crafted `agora-dev:<id>` string
+  // that the backend accepts when PRIVY_APP_ID is unset. Once Privy is
+  // wired into production this changes to the real JWT issued by Privy
+  // — backend side already verifies both.
+
+  let AGORA_AUTH = null;
+  try {
+    const raw = sessionStorage.getItem("agora_auth");
+    if (raw) AGORA_AUTH = JSON.parse(raw);
+  } catch { AGORA_AUTH = null; }
+
+  function authHeaders() {
+    if (!AGORA_AUTH) return {};
+    const h = { "Authorization": "Bearer " + AGORA_AUTH.token };
+    if (AGORA_AUTH.email) h["X-Privy-Email"] = AGORA_AUTH.email;
+    if (AGORA_AUTH.primary_wallet) h["X-Privy-Wallet"] = AGORA_AUTH.primary_wallet;
+    return h;
+  }
+
+  function persistAuth() {
+    if (AGORA_AUTH) sessionStorage.setItem("agora_auth", JSON.stringify(AGORA_AUTH));
+    else sessionStorage.removeItem("agora_auth");
+    renderAuthSlot();
+  }
+
+  function renderAuthSlot() {
+    const slot = document.getElementById("authSlot");
+    if (!slot) return;
+    if (!AGORA_AUTH) {
+      slot.innerHTML = '<button class="btn-login" id="btnOpenLogin">Login</button>';
+      document.getElementById("btnOpenLogin").addEventListener("click", openAuthModal);
+      return;
+    }
+    const label = AGORA_AUTH.email || (AGORA_AUTH.primary_wallet
+      ? AGORA_AUTH.primary_wallet.slice(0,6) + "…" + AGORA_AUTH.primary_wallet.slice(-4)
+      : AGORA_AUTH.did.split(":").pop().slice(0, 8));
+    const initial = (label[0] || "?").toUpperCase();
+    slot.innerHTML = `
+      <span class="user-chip">
+        <span class="avatar">${initial}</span>
+        <span>${label}</span>
+        <button class="logout" id="btnLogout" title="Logout">×</button>
+      </span>
+    `;
+    document.getElementById("btnLogout").addEventListener("click", () => {
+      AGORA_AUTH = null;
+      persistAuth();
+    });
+  }
+
+  function openAuthModal() {
+    document.getElementById("authError").innerHTML = "";
+    document.getElementById("authModal").classList.add("open");
+  }
+  function closeAuthModal() {
+    document.getElementById("authModal").classList.remove("open");
+  }
+  function authError(msg) {
+    document.getElementById("authError").innerHTML =
+      `<div class="auth-error">${msg}</div>`;
+  }
+
+  async function syncAuth(token, hints) {
+    // hints: { email?, primary_wallet?, display_name? }
+    const resp = await fetch(`${API}/v1/auth/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token,
+        ...(hints.email ? { "X-Privy-Email": hints.email } : {}),
+        ...(hints.primary_wallet ? { "X-Privy-Wallet": hints.primary_wallet } : {}),
+      },
+      body: JSON.stringify({
+        email: hints.email || null,
+        primary_wallet: hints.primary_wallet || null,
+        display_name: hints.display_name || null,
+      }),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => "");
+      throw new Error(`auth/sync failed: ${resp.status} ${t.slice(0, 200)}`);
+    }
+    return resp.json();
+  }
+
+  async function loginEmail(email) {
+    const cleaned = (email || "").trim().toLowerCase();
+    if (!cleaned || !cleaned.includes("@")) {
+      authError("Please enter a valid email address.");
+      return;
+    }
+    // Dev token: deterministic per-email. Backend's privy verifier
+    // accepts `agora-dev:<id>` when PRIVY_APP_ID is empty.
+    const id = "email-" + (await sha256Short(cleaned));
+    const token = `agora-dev:${id}`;
+    try {
+      const u = await syncAuth(token, { email: cleaned, display_name: cleaned });
+      AGORA_AUTH = {
+        token,
+        did: u.did,
+        email: u.email,
+        primary_wallet: u.primary_wallet,
+      };
+      persistAuth();
+      closeAuthModal();
+    } catch (e) {
+      authError(String(e));
+    }
+  }
+
+  async function loginWallet() {
+    if (!window.ethereum) {
+      authError("No browser wallet detected. Install MetaMask or use WalletConnect.");
+      return;
+    }
+    try {
+      const accs = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const addr = accs && accs[0];
+      if (!addr) { authError("No address returned by wallet."); return; }
+      const id = "wallet-" + addr.toLowerCase();
+      const token = `agora-dev:${id}`;
+      const u = await syncAuth(token, { primary_wallet: addr });
+      AGORA_AUTH = {
+        token,
+        did: u.did,
+        email: u.email,
+        primary_wallet: u.primary_wallet || addr,
+      };
+      persistAuth();
+      closeAuthModal();
+    } catch (e) {
+      authError(String(e.message || e));
+    }
+  }
+
+  async function sha256Short(s) {
+    const buf = new TextEncoder().encode(s);
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const arr = Array.from(new Uint8Array(hash)).slice(0, 8);
+    return arr.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Wire up auth modal event handlers
+  window.addEventListener("DOMContentLoaded", () => {
+    renderAuthSlot();
+    const btnOpen = document.getElementById("btnOpenLogin");
+    if (btnOpen) btnOpen.addEventListener("click", openAuthModal);
+    document.getElementById("authClose").addEventListener("click", closeAuthModal);
+    document.getElementById("authModal").addEventListener("click", (e) => {
+      if (e.target.id === "authModal") closeAuthModal();
+    });
+    document.getElementById("authEmailContinue").addEventListener("click", () => {
+      loginEmail(document.getElementById("authEmail").value);
+    });
+    document.getElementById("authEmail").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loginEmail(document.getElementById("authEmail").value);
+    });
+    document.getElementById("authConnectWallet").addEventListener("click", loginWallet);
+    document.getElementById("authGoogle").addEventListener("click", () => {
+      authError("Google login is not yet wired up. Use email or wallet for now.");
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════
+  //  End auth
+  // ══════════════════════════════════════════════════════════
 
   // Currently selected filters
   const state = {
@@ -1133,10 +1479,14 @@
 
   // ─── Buy wizard ─────────────────────────────────────────
 
-  // Buyer identity. For now we use a hard-coded demo DID — Sprint 10d
-  // will replace this with Privy-backed buyer auth. The DID needs to
-  // exist as an Agent on Agora; alice-demo is seeded since Sprint 5.
-  const BUYER_DID = "did:agora:4mrYSXT_f69BiaSeo7vmaA";
+  // Buyer identity (Sprint 10d): comes from the logged-in user. Falls
+  // back to the alice-demo seeded DID when no one is logged in, so the
+  // wizard still gives a sensible 401 path for users to try without
+  // a login.
+  function getBuyerDid() {
+    if (AGORA_AUTH && AGORA_AUTH.did) return AGORA_AUTH.did;
+    return "did:agora:4mrYSXT_f69BiaSeo7vmaA";
+  }
 
   // The currently-open listing in the modal. Captured when openModal()
   // runs so the buy wizard can reference it.
@@ -1189,10 +1539,19 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Asking server…';
 
+    // Require login before buying — the delivery endpoint will reject
+    // un-auth'd requests for user-driven buys, so fail early.
+    if (!AGORA_AUTH) {
+      btn.disabled = false;
+      btn.innerHTML = "Get payment instructions";
+      openAuthModal();
+      return;
+    }
+
     // Build the x402 body — exactly the same one used for the retry.
     const deadlineUnix = Math.floor(Date.now() / 1000) + 24 * 3600; // 24h
     currentBuyBody = {
-      requester_did: BUYER_DID,
+      requester_did: getBuyerDid(),
       provider_did: currentListing.seller_did,
       task: {
         listing_id: currentListing.id,
@@ -1207,7 +1566,7 @@
     try {
       const resp = await fetch(`${API}/v1/x402/jobs`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(currentBuyBody),
       });
       if (resp.status !== 402) {
@@ -1327,6 +1686,7 @@
         headers: {
           "Content-Type": "application/json",
           "X-Payment-Tx": txHash,
+          ...authHeaders(),
         },
         body: JSON.stringify(currentBuyBody),
       });
@@ -1363,6 +1723,7 @@
     try {
       const resp = await fetch(
         `${API}/v1/listings/${currentListing.id}/delivery?job_id=${jobId}`,
+        { headers: { ...authHeaders() } },
       );
       const data = await resp.json();
       if (!resp.ok) {

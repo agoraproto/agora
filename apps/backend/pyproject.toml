@@ -22,6 +22,7 @@ dependencies = [
     "qdrant-client>=1.10.0",
     "web3>=7.0.0",
     "eth-account>=0.13.0",
+    "PyJWT[crypto]>=2.9.0",
 ]
 
 [project.optional-dependencies]

@@ -16,10 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import get_current_user_optional
 from ..config import get_settings
 from ..db import agents_repo, jobs_repo, listings_repo
 from ..db.base import get_session
-from ..db.models import JobStatus, ListingKind, ListingType
+from ..db.models import Agent, JobStatus, ListingKind, ListingType, User
 from ..rate_limit import limiter
 
 router = APIRouter()
@@ -29,9 +30,15 @@ router = APIRouter()
 
 
 class ListingCreateRequest(BaseModel):
-    seller_kind: str = Field(..., description="'agent' or 'user'")
-    seller_did: str = Field(..., description="DID of the agent or user offering this listing")
-    payout_wallet: str = Field(..., description="EVM address to receive USDC payout")
+    # seller_kind / seller_did / payout_wallet are required when called
+    # without a Privy login (legacy SDK / seed scripts creating agent
+    # listings). When the request carries a Privy bearer token they
+    # are ignored — the API forces seller_kind="user" and seller_did
+    # to the authenticated user's DID. payout_wallet falls back to the
+    # user's primary_wallet if absent.
+    seller_kind: str | None = Field(default=None, description="'agent' or 'user' — ignored when authed")
+    seller_did: str | None = Field(default=None, description="DID of the seller — ignored when authed")
+    payout_wallet: str | None = Field(default=None, description="EVM payout address (default = primary_wallet)")
     listing_type: str = Field(..., description="'service' or 'digital_product'")
     title: str = Field(..., min_length=2, max_length=255)
     description: str = Field(default="", max_length=10_000)
@@ -93,10 +100,52 @@ async def create_listing(
     request: Request,
     body: ListingCreateRequest,
     session: AsyncSession = Depends(get_session),
+    principal: tuple[User, Agent] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
-    kind = _parse_kind(body.seller_kind)
+    # ── Auth-aware seller resolution ──
+    # If the caller is a logged-in human, the seller is forced to be
+    # them — they cannot create a listing under someone else's DID.
+    # If unauthed, the SDK / seed flow must explicitly supply all
+    # seller fields and seller_kind has to be 'agent' (humans must
+    # login first).
+    if principal is not None:
+        user, _user_agent = principal
+        seller_kind_str = "user"
+        seller_did = user.did
+        payout_wallet = body.payout_wallet or user.primary_wallet
+        if not payout_wallet:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "no payout_wallet on file — link a wallet via Privy or "
+                    "pass payout_wallet in the request body."
+                ),
+            )
+    else:
+        # ── Anonymous / legacy SDK path ──
+        # Tests and SDK callers can hit this endpoint without auth as
+        # long as they explicitly provide every seller field. There's
+        # no DID-ownership check on `seller_did` for anonymous calls
+        # — a future sprint will add DID-signature verification so
+        # agents prove they own their DID. For now, anonymous user-DID
+        # listings are tolerated (legacy) and rate-limited against
+        # spam. Authed callers go through the strict path above.
+        if not body.seller_kind or not body.seller_did or not body.payout_wallet:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "create_listing requires seller_kind, seller_did and "
+                    "payout_wallet — or login via Privy to have them set "
+                    "from your authenticated session."
+                ),
+            )
+        seller_kind_str = body.seller_kind
+        seller_did = body.seller_did
+        payout_wallet = body.payout_wallet
+
+    kind = _parse_kind(seller_kind_str)
     lt = _parse_type(body.listing_type)
-    await _validate_seller(session, kind, body.seller_did)
+    await _validate_seller(session, kind, seller_did)
 
     try:
         price = Decimal(body.price_amount)
@@ -119,8 +168,8 @@ async def create_listing(
     listing = await listings_repo.create(
         session,
         seller_kind=kind,
-        seller_did=body.seller_did,
-        payout_wallet=body.payout_wallet,
+        seller_did=seller_did,
+        payout_wallet=payout_wallet,
         listing_type=lt,
         title=body.title,
         description=body.description,
@@ -215,13 +264,19 @@ async def get_delivery(
     listing_id: str,
     job_id: str,
     session: AsyncSession = Depends(get_session),
+    principal: tuple[User, Agent] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     """Return a marketplace listing's deliverable to the legitimate buyer.
 
-    Authorisation today is "knowledge of the (listing_id, job_id) pair"
-    — the job_id is a UUID returned to the buyer when the x402 POST
-    confirmed their on-chain payment, so it acts as a bearer token.
-    Sprint 10d will replace this with Privy-backed buyer auth.
+    Sprint 10d: this is now gated by Privy auth. The caller must be
+    logged in AND must be the buyer (i.e. the `requester_agent.owner_did`
+    of the Job must equal the user's DID). Anonymous calls receive 401.
+
+    For agent-driven buys (SDK flow, not via the web UI) we fall back
+    to the legacy "knowledge of the (listing_id, job_id) pair" model:
+    if the job's requester is an agent of type 'service' (not 'user'),
+    the agent's holder of the URL is trusted. This will tighten further
+    once agents authenticate via signed DID assertions.
 
     Behaviour:
 
@@ -259,6 +314,31 @@ async def get_delivery(
             status_code=404,
             detail=f"job {job_id} is not linked to listing {listing_id}",
         )
+
+    # ── Buyer authorisation (Sprint 10d) ──
+    # The job's requester_agent is the buyer's identity on Agora. For
+    # human buyers it's their personal agent, whose owner_did == user.did.
+    requester_agent = await agents_repo.get_by_id(session, job.requester_agent_id)
+    if requester_agent is None:
+        # Shouldn't happen — Job FK guarantees the row exists — but
+        # avoid leaking content if it does.
+        raise HTTPException(status_code=404, detail="job requester missing")
+
+    if requester_agent.type.value == "user" or str(requester_agent.type) == "user":
+        # Buy was made through the web UI by a logged-in human. Require
+        # that same human to be calling us now.
+        if principal is None:
+            raise HTTPException(
+                status_code=401,
+                detail="delivery requires Privy login (this purchase was made by a logged-in user)",
+            )
+        user, _ = principal
+        if requester_agent.owner_did != user.did:
+            raise HTTPException(
+                status_code=403,
+                detail="you are not the buyer of this order",
+            )
+    # else: agent-driven buy → legacy path. SDK auth lands in a later sprint.
 
     # Status-gating per listing_type.
     lt = (
@@ -329,11 +409,14 @@ async def get_delivery(
 async def archive_listing(
     listing_id: str,
     session: AsyncSession = Depends(get_session),
+    principal: tuple[User, Agent] | None = Depends(get_current_user_optional),
 ) -> dict[str, str]:
-    # NOTE: no seller-auth check yet — Sprint 10d adds Privy auth that
-    # verifies the caller actually owns the listing. Today this is open
-    # by design (testnet, dev mode) so seed scripts and manual tooling
-    # can clean up. Tighten before any production-like exposure.
+    """Sprint 10d: human-listing owners must authenticate to archive.
+
+    Agent-listings (seller_kind='agent') are still archivable without
+    auth — a future sprint will add agent API-key / DID-signature
+    middleware so the agent's owner can archive their own listings.
+    """
     try:
         lid = uuid.UUID(listing_id)
     except ValueError as e:
@@ -343,6 +426,20 @@ async def archive_listing(
     listing = await listings_repo.get(session, lid)
     if listing is None:
         raise HTTPException(status_code=404, detail=f"listing {listing_id} not found")
+
+    if listing.seller_kind == ListingKind.user:
+        if principal is None:
+            raise HTTPException(
+                status_code=401, detail="user-owned listing — login required"
+            )
+        user, _ = principal
+        if listing.seller_did != user.did:
+            raise HTTPException(
+                status_code=403,
+                detail="only the owning user can archive this listing",
+            )
+    # else: agent listing — open until per-agent auth lands.
+
     await listings_repo.archive(session, listing)
     await session.commit()
     return {"id": listing_id, "status": "archived"}
