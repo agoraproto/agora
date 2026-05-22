@@ -165,10 +165,35 @@ async def create_x402_job(
     provider = await agents_repo.get_by_did(session, body.provider_did)
     if requester is None or provider is None:
         raise HTTPException(status_code=404, detail="requester or provider unknown")
-    if provider.payout_wallet is None:
+
+    # ── Resolve payout wallet (Sprint 10d-1) ──
+    # When the buy comes from a marketplace listing, the Listing's
+    # payout_wallet is authoritative — it's the wallet the seller chose
+    # at listing-time, which may differ from their agent's default.
+    # Falls back to the provider agent's payout_wallet for direct
+    # agent-to-agent x402 calls without a listing.
+    payee_wallet: str | None = None
+    listing_for_purchase = None
+    if body.listing_id:
+        try:
+            listing_uuid_check = uuid.UUID(body.listing_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"invalid listing_id: {e}") from e
+        listing_for_purchase = await listings_repo.get(session, listing_uuid_check)
+        if listing_for_purchase is None:
+            raise HTTPException(
+                status_code=404, detail=f"listing {body.listing_id} not found"
+            )
+        payee_wallet = listing_for_purchase.payout_wallet
+    if payee_wallet is None:
+        payee_wallet = provider.payout_wallet
+    if payee_wallet is None:
         raise HTTPException(
             status_code=409,
-            detail=f"provider {body.provider_did} has no payout_wallet set",
+            detail=(
+                f"provider {body.provider_did} has no payout_wallet set "
+                "(neither on the agent nor on a referenced listing)"
+            ),
         )
 
     amount = client.to_smallest_unit(Decimal(body.budget_usdc))
@@ -192,7 +217,7 @@ async def create_x402_job(
             "recipient_contract": settings.escrow_contract_address,
             "function": "createJob",
             "args": {
-                "payee": provider.payout_wallet,
+                "payee": payee_wallet,
                 "amount": str(amount),
                 "taskHash": "0x" + task_hash.hex(),
                 "deadline": body.deadline_unix,
@@ -232,7 +257,7 @@ async def create_x402_job(
                 raise HTTPException(status_code=402, detail="amount mismatch")
             if bytes(parsed["args"]["taskHash"]) != task_hash:
                 raise HTTPException(status_code=402, detail="taskHash mismatch")
-            if parsed["args"]["payee"].lower() != provider.payout_wallet.lower():
+            if parsed["args"]["payee"].lower() != payee_wallet.lower():
                 raise HTTPException(status_code=402, detail="payee mismatch")
             break
         except HTTPException:

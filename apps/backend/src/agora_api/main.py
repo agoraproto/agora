@@ -92,6 +92,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Allow the frontend to read x402 protocol headers. Without this,
+    # browser fetch() hides X-Payment-Required from JS even though the
+    # response carries it (Sprint 10d-2 fix).
+    expose_headers=["X-Payment-Required", "X-Payment-Tx"],
 )
 
 app.include_router(health.router, tags=["health"])
