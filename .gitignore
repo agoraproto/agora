@@ -77,3 +77,8 @@ apps/dashboard/tsconfig.tsbuildinfo
 _tmp_*
 
 Zugangsdaten.txt
+
+# Sprint 11: Swarm wallet keys + state. CRITICAL — never commit these.
+experiments/swarm/data/
+experiments/swarm/.env
+*.deployer.key

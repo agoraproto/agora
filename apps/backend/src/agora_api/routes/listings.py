@@ -155,6 +155,20 @@ async def create_listing(
         ) from e
     if price <= 0:
         raise HTTPException(status_code=400, detail="price_amount must be > 0")
+    # Sprint 10e: the on-chain AgoraEscrow contract reverts createJob
+    # with AmountTooSmall() if amount <= minFee (0.50 USDC). Listings
+    # below that price are unbuyable, so reject at create-time with a
+    # clear error. Buyer pays platform fee + insurance out of this, so
+    # we recommend 1.00+ to leave the seller something.
+    if price <= Decimal("0.50"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "price_amount must be greater than 0.50 USDC "
+                "(the on-chain escrow's minimum fee). "
+                "Try 1.00 USDC or higher so the seller nets something after fees."
+            ),
+        )
 
     if lt == ListingType.service and not body.service_capability:
         raise HTTPException(
