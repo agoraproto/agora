@@ -106,17 +106,33 @@ class Buyer:
 
     async def _check_pending(self) -> None:
         """For each job we hired, if the provider has submitted, approve+pay."""
-        if not self.pending_jobs:
-            return
+        # Query the API for all submitted jobs where this buyer is the
+        # requester. This is robust against process restarts (in-memory
+        # pending_jobs is empty after a fresh start, but the chain knows).
         async with httpx.AsyncClient(timeout=15) as http:
-            for job_id in list(self.pending_jobs.keys()):
-                r = await http.get(f"{API}/v1/jobs/{job_id}")
-                if r.status_code != 200:
+            r = await http.get(
+                f"{API}/v1/jobs",
+                params={"requester_did": self.did, "status": "submitted"},
+            )
+        if r.status_code != 200:
+            return
+        jobs_data = r.json()
+        jobs = jobs_data.get("jobs", jobs_data if isinstance(jobs_data, list) else [])
+
+        async with httpx.AsyncClient(timeout=15) as http:
+            for j in jobs:
+                job_id = j.get("id")
+                if not job_id:
                     continue
-                job = r.json()
-                if job.get("status") != "submitted":
+                # The search filter is unreliable — re-check status on the
+                # full record before approving.
+                rd = await http.get(f"{API}/v1/jobs/{job_id}")
+                if rd.status_code != 200:
                     continue
-                log.info("[%s] job %s is submitted — approving", self.slug, job_id)
+                full = rd.json()
+                if full.get("status") != "submitted":
+                    continue
+                log.info("[%s] approving submitted job %s", self.slug, job_id)
                 try:
                     from agora_sdk.x402 import approve_with_x402
                     await approve_with_x402(
