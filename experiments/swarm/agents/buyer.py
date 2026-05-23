@@ -87,15 +87,13 @@ class Buyer:
 
         try:
             job = await hire_with_x402(
-                api_base=API,
+                API,
                 requester_did=self.did,
                 provider_did=provider_did,
                 task=task,
                 budget_usdc=str(listing["price_amount"]),
                 rpc_url=RPC,
                 private_key=self.private_key,
-                deadline_unix=None,  # default 24h
-                listing_id=listing["id"],
             )
             log.info("[%s] hired → job %s", self.slug, job.get("id"))
             self.pending_jobs[job["id"]] = {
@@ -122,7 +120,7 @@ class Buyer:
                 try:
                     from agora_sdk.x402 import approve_with_x402
                     await approve_with_x402(
-                        api_base=API,
+                        API,
                         job_id=job_id,
                         rpc_url=RPC,
                         private_key=self.private_key,

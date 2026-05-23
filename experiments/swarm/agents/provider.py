@@ -79,7 +79,7 @@ class Provider:
 
         try:
             result = await submit_result_with_x402(
-                api_base=API,
+                API,
                 job_id=job["id"],
                 result=result_payload,
                 rpc_url=RPC,
