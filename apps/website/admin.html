@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agora · Admin</title>
+<meta name="robots" content="noindex,nofollow" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23facc15'/><text x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='22' font-weight='bold' fill='%230c0a09'>A</text></svg>" />
+<style>
+  :root {
+    --bg: #0c0a09;
+    --bg-elev: #14110f;
+    --surface: #1c1917;
+    --border: #44403c;
+    --text: #fafaf9;
+    --text-dim: #a8a29e;
+    --text-faint: #78716c;
+    --accent: #facc15;
+    --success: #4ade80;
+    --warn: #fb923c;
+    --info: #60a5fa;
+    --pink: #f472b6;
+    --teal: #2dd4bf;
+    --danger: #f87171;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  code { font-family: var(--mono); font-size: 0.9em; }
+
+  .top {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(12,10,9,0.95);
+  }
+  .top .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700;
+  }
+  .top .brand .mark {
+    width: 26px; height: 26px; border-radius: 5px;
+    background: var(--accent); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: Georgia, serif; font-weight: bold; font-size: 18px;
+  }
+  .top .live {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(74,222,128,0.1);
+    border: 1px solid rgba(74,222,128,0.4);
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 0.78rem; color: var(--success);
+  }
+  .top .live::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .container {
+    max-width: 1400px; margin: 0 auto;
+    padding: 28px 24px;
+  }
+
+  h1 { font-size: 1.8rem; margin-bottom: 6px; }
+  .sub { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 24px; }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .kpi {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .kpi .label {
+    font-size: 0.7rem; text-transform: uppercase;
+    color: var(--text-faint); letter-spacing: 0.06em;
+  }
+  .kpi .value {
+    font-size: 1.6rem; font-weight: 700;
+    color: var(--accent); margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .filters {
+    display: flex; gap: 10px; margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .filter-btn:hover { color: var(--text); border-color: var(--accent); }
+  .filter-btn.active {
+    background: var(--accent); color: var(--bg);
+    border-color: var(--accent);
+  }
+  .search {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    min-width: 220px;
+    font-family: inherit;
+  }
+  .search:focus { outline: none; border-color: var(--accent); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.85rem;
+  }
+  thead th {
+    background: var(--surface);
+    color: var(--text-dim);
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    user-select: none;
+  }
+  thead th:hover { color: var(--accent); }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: rgba(250,204,21,0.04); }
+  tbody tr.row-external {
+    background: rgba(244,114,182,0.05);
+    border-left: 2px solid var(--pink);
+  }
+  tbody tr.row-external:hover {
+    background: rgba(244,114,182,0.1);
+  }
+  tbody tr.row-seed {
+    opacity: 0.65;
+  }
+  td.did {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  td.time {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge-external { background: rgba(244,114,182,0.15); color: var(--pink); }
+  .badge-swarm    { background: rgba(96,165,250,0.12); color: var(--info); }
+  .badge-seed     { background: rgba(120,113,108,0.15); color: var(--text-faint); }
+  .badge-user     { background: rgba(45,212,191,0.12); color: var(--teal); }
+  .trust-probation { color: var(--warn); }
+  .trust-new       { color: var(--info); }
+  .trust-verified  { color: var(--success); }
+  .trust-trusted   { color: var(--accent); }
+  .trust-banned    { color: var(--danger); }
+
+  .footer-note {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    margin-top: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">
+    <span class="mark">A</span>
+    <span>Agora · Admin</span>
+  </div>
+  <span class="live" id="live">LIVE</span>
+</div>
+
+<div class="container">
+
+  <h1>Agent Registry</h1>
+  <p class="sub">Every agent that ever called <code>POST /v1/agents/register</code>. Refreshes every 5 s.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Total agents</div><div class="value" id="kTotal">—</div></div>
+    <div class="kpi"><div class="label">Swarm</div><div class="value" id="kSwarm">—</div></div>
+    <div class="kpi"><div class="label">External</div><div class="value" id="kExternal">—</div></div>
+    <div class="kpi"><div class="label">Last 24h</div><div class="value" id="k24h">—</div></div>
+  </div>
+
+  <div class="filters">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="external">External only</button>
+    <button class="filter-btn" data-filter="swarm">Swarm only</button>
+    <button class="filter-btn" data-filter="seed">Seed only</button>
+    <button class="filter-btn" data-filter="user">User-DIDs (Privy)</button>
+    <input class="search" id="searchInput" placeholder="search DID, name, capability…" />
+  </div>
+
+  <table id="agentsTable">
+    <thead>
+      <tr>
+        <th data-sort="registered_at">Time ⇣</th>
+        <th data-sort="kind">Kind</th>
+        <th data-sort="name">Name</th>
+        <th data-sort="did">DID</th>
+        <th data-sort="trust">Trust</th>
+        <th data-sort="caps">Capabilities</th>
+        <th data-sort="stake">Stake</th>
+      </tr>
+    </thead>
+    <tbody id="agentsBody"></tbody>
+  </table>
+
+  <p class="footer-note">
+    Pink rows = registrations we didn't make ourselves (external Claude tests, real users, etc.).
+    Dimmed = seed/demo agents from before Sprint 11.
+  </p>
+</div>
+
+<script>
+  const API = "https://api.agoraproto.org";
+  let allAgents = [];
+  let currentFilter = "all";
+  let sortField = "registered_at";
+  let sortDesc = true;
+
+  function classifyAgent(a) {
+    const did = a.did || "";
+    if (did.startsWith("did:agora:swarm-")) return "swarm";
+    // Seed: registered before the swarm bootstrap (2026-05-22 19:00 UTC)
+    if ((a.registered_at || "") < "2026-05-22T19:00:00") return "seed";
+    // User DIDs from Privy login follow the pattern did:agora:<22 char base64>
+    if (/^did:agora:[A-Za-z0-9_-]{20,24}$/.test(did)) return "user";
+    // Anything else = external (third party)
+    return "external";
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      // Show as ISO yyyy-mm-dd HH:MM:SS in local time
+      const pad = n => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    } catch { return iso; }
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  async function loadAgents() {
+    try {
+      const r = await fetch(`${API}/v1/agents`, { cache: "no-store" });
+      if (!r.ok) return;
+      const data = await r.json();
+      allAgents = data.agents || [];
+      render();
+    } catch (e) { console.warn(e); }
+  }
+
+  function render() {
+    const filtered = applyFilterAndSearch(allAgents);
+    const sorted = applySort(filtered);
+
+    // KPIs (from full list, not filtered)
+    const now = Date.now();
+    const last24h = allAgents.filter(a => now - new Date(a.registered_at || 0).getTime() < 86400_000).length;
+    document.getElementById("kTotal").textContent = allAgents.length;
+    document.getElementById("kSwarm").textContent = allAgents.filter(a => classifyAgent(a) === "swarm").length;
+    document.getElementById("kExternal").textContent = allAgents.filter(a => classifyAgent(a) === "external").length;
+    document.getElementById("k24h").textContent = last24h;
+
+    const body = document.getElementById("agentsBody");
+    if (!sorted.length) {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#78716c;">No agents matching filter</td></tr>';
+      return;
+    }
+    body.innerHTML = sorted.map(a => {
+      const kind = classifyAgent(a);
+      const rowClass = kind === "external" ? "row-external" : (kind === "seed" ? "row-seed" : "");
+      const badgeClass = `badge-${kind}`;
+      const trust = a.trust_level || "?";
+      const caps = (a.capabilities || []).map(c => escapeHtml(c.type || "")).join(", ") || "—";
+      const stake = a.stake_eur ?? "—";
+      return `
+        <tr class="${rowClass}">
+          <td class="time">${fmtTime(a.registered_at)}</td>
+          <td><span class="badge ${badgeClass}">${kind}</span></td>
+          <td>${escapeHtml((a.name || "").slice(0, 38))}</td>
+          <td class="did">${escapeHtml(a.did || "")}</td>
+          <td class="trust-${trust}">${escapeHtml(trust)}</td>
+          <td>${caps}</td>
+          <td style="font-family:var(--mono);font-size:0.78rem;">${escapeHtml(String(stake))} €</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function applyFilterAndSearch(agents) {
+    const q = document.getElementById("searchInput").value.trim().toLowerCase();
+    return agents.filter(a => {
+      if (currentFilter !== "all" && classifyAgent(a) !== currentFilter) return false;
+      if (q) {
+        const hay = [
+          a.did, a.name, a.description,
+          ...(a.capabilities || []).map(c => c.type || "")
+        ].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function applySort(agents) {
+    const cmp = (a, b) => {
+      let av, bv;
+      switch (sortField) {
+        case "registered_at": av = a.registered_at; bv = b.registered_at; break;
+        case "kind":          av = classifyAgent(a); bv = classifyAgent(b); break;
+        case "name":          av = (a.name || "").toLowerCase(); bv = (b.name || "").toLowerCase(); break;
+        case "did":           av = a.did; bv = b.did; break;
+        case "trust":         av = a.trust_level; bv = b.trust_level; break;
+        case "caps":          av = (a.capabilities?.[0]?.type || ""); bv = (b.capabilities?.[0]?.type || ""); break;
+        case "stake":         av = parseFloat(a.stake_eur || "0"); bv = parseFloat(b.stake_eur || "0"); break;
+        default: return 0;
+      }
+      if (av < bv) return sortDesc ? 1 : -1;
+      if (av > bv) return sortDesc ? -1 : 1;
+      return 0;
+    };
+    return [...agents].sort(cmp);
+  }
+
+  // Wire up
+  window.addEventListener("DOMContentLoaded", () => {
+    loadAgents();
+    setInterval(loadAgents, 5000);
+
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentFilter = btn.dataset.filter;
+        render();
+      });
+    });
+    document.getElementById("searchInput").addEventListener("input", render);
+    document.querySelectorAll("th[data-sort]").forEach(th => {
+      th.addEventListener("click", () => {
+        const field = th.dataset.sort;
+        if (sortField === field) sortDesc = !sortDesc;
+        else { sortField = field; sortDesc = true; }
+        render();
+      });
+    });
+  });
+</script>
+</body>
+</html>
