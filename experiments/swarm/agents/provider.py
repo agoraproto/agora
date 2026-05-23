@@ -51,14 +51,22 @@ class Provider:
         if r.status_code != 200:
             return
         jobs = r.json().get("jobs", r.json() if isinstance(r.json(), list) else [])
-        for job in jobs:
-            jid = job.get("id")
-            if not jid or jid in self.handled:
-                continue
-            if job.get("settlement_mode") != "onchain":
-                continue
-            await self._handle_job(job)
-            self.handled.add(jid)
+        async with httpx.AsyncClient(timeout=20) as http:
+            for job in jobs:
+                jid = job.get("id")
+                if not jid or jid in self.handled:
+                    continue
+                # The /v1/jobs search endpoint may omit settlement_mode and
+                # task_spec — fetch the full job by id so handle_job has
+                # everything it needs.
+                rd = await http.get(f"{API}/v1/jobs/{jid}")
+                if rd.status_code != 200:
+                    continue
+                full = rd.json()
+                if full.get("settlement_mode") != "onchain":
+                    continue
+                await self._handle_job(full)
+                self.handled.add(jid)
 
     async def _handle_job(self, job: dict) -> None:
         log.info("[%s] handling job %s", self.slug, job["id"])
