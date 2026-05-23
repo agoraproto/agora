@@ -14,13 +14,10 @@ set -e
 CADDYFILE="/etc/caddy/Caddyfile"
 USERNAME="andreas"
 
-# ── Check if basic-auth is already set up ──
-if grep -q "@admin path /admin.html" "$CADDYFILE"; then
-    echo "⚠️  Basic auth for /admin.html is already configured in $CADDYFILE."
-    echo "   To rotate the password, edit the Caddyfile manually or delete"
-    echo "   the @admin / basic_auth block and re-run this script."
-    exit 0
-fi
+# Note: this script is idempotent — it removes any prior @admin/basic_auth
+# blocks (no matter where they were injected) and re-inserts a fresh one
+# in the correct top-level agoraproto.org block. Password rotates on each
+# run, so save the printed password immediately.
 
 # ── Generate a random password (24 chars, base64) ──
 PASSWORD=$(openssl rand -base64 18 | tr -d '=+/' | head -c 24)
@@ -47,9 +44,15 @@ import re, pathlib
 p = pathlib.Path("$CADDYFILE")
 src = p.read_text()
 
-block_start = src.find("agoraproto.org {")
-if block_start == -1:
-    raise SystemExit("Could not find 'agoraproto.org {' block in Caddyfile")
+# Match 'agoraproto.org {' only when it's the entire site name (not a
+# substring of 'api.agoraproto.org' or 'dashboard.agoraproto.org').
+# That means: at start of line or after whitespace, and not preceded
+# by a dot.
+m = re.search(r'(?:^|\n)agoraproto\.org\s*\{', src)
+if not m:
+    raise SystemExit("Could not find a top-level 'agoraproto.org {' block in Caddyfile")
+block_start = m.start() + (1 if src[m.start()] == "\n" else 0)
+print(f"Found agoraproto.org block at offset {block_start}")
 
 # Walk forward to find the matching closing brace at depth 0 within the block.
 depth = 0
@@ -67,6 +70,41 @@ while i < len(src):
     i += 1
 if end == -1:
     raise SystemExit("Could not find closing brace of agoraproto.org block")
+
+# Clean up any prior basic_auth blocks we may have wrongly injected earlier
+# (e.g. inside api.agoraproto.org from the v1 of this script).
+cleanup = re.compile(
+    r'\n?\s*# Admin route — basic auth, set up by setup_admin_auth\.sh\n'
+    r'\s*@admin path /admin\.html\n'
+    r'\s*basic_auth @admin \{\n[^}]*\n\s*\}\n',
+    re.MULTILINE,
+)
+n_removed = 0
+while True:
+    new_src, n = cleanup.subn("", src, count=1)
+    if n == 0:
+        break
+    src = new_src
+    n_removed += 1
+if n_removed:
+    print(f"Removed {n_removed} stale basic_auth block(s) from prior runs.")
+
+# Re-find end after cleanup
+m = re.search(r'(?:^|\n)agoraproto\.org\s*\{', src)
+block_start = m.start() + (1 if src[m.start()] == "\n" else 0)
+depth = 0
+i = block_start
+end = -1
+while i < len(src):
+    c = src[i]
+    if c == "{":
+        depth += 1
+    elif c == "}":
+        depth -= 1
+        if depth == 0:
+            end = i
+            break
+    i += 1
 
 inject = """
     # Admin route — basic auth, set up by setup_admin_auth.sh
