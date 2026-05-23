@@ -63,8 +63,10 @@ class Provider:
                 if rd.status_code != 200:
                     continue
                 full = rd.json()
-                if full.get("settlement_mode") != "onchain":
-                    continue
+                # Backend bug: /v1/jobs/{id} doesn't serialize
+                # `settlement_mode`. For now we attempt handle_job on every
+                # offered job — submit_result_with_x402 will 503 if it
+                # turns out to be off-chain.
                 await self._handle_job(full)
                 self.handled.add(jid)
 
