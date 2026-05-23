@@ -82,4 +82,6 @@ Zugangsdaten.txt
 experiments/swarm/data/
 experiments/swarm/.env
 experiments/swarm/.deployer-key
+.github_token
+.github_pat
 *.deployer.key
