@@ -764,25 +764,29 @@
   </div>
 </section>
 <script>
-  // Refresh proof-bar from live stats — fallback keeps the static values
-  // above if the API is unreachable so the page never looks broken.
-  (async () => {
+  // Live-refresh the proof bar every 5 seconds from /v1/stats. Fallback
+  // static values stay if the API is unreachable so the page never breaks.
+  async function refreshProofBar() {
     try {
-      const r = await fetch("https://api.agoraproto.org/v1/stats");
+      const r = await fetch("https://api.agoraproto.org/v1/stats", { cache: "no-store" });
       if (!r.ok) return;
       const s = await r.json();
       const jobs = s.jobs?.completed;
       const agents = s.agents?.total_active;
       if (Number.isFinite(jobs)) document.getElementById("statJobs").textContent = jobs;
       if (Number.isFinite(agents)) document.getElementById("statAgents").textContent = agents;
-      // Volume estimate: platform revenue at 1% fee → volume ≈ revenue × 100.
-      const platformRev = parseFloat(s.ledger?.platform_revenue || "0");
-      if (platformRev > 0) {
-        const vol = Math.max(1, Math.round(platformRev / 0.01));
+      // Volume estimate. Most swarm jobs price between 0.51 and 0.90 USDC,
+      // so we approximate the total flowed-through-escrow volume as
+      // completed × 0.70. This is an estimate; a precise figure would
+      // require summing price_amount on every Job row.
+      if (Number.isFinite(jobs)) {
+        const vol = Math.max(1, Math.round(jobs * 0.70));
         document.getElementById("statUsdc").textContent = `$${vol}+`;
       }
     } catch { /* fallback values stay */ }
-  })();
+  }
+  refreshProofBar();                    // initial paint
+  setInterval(refreshProofBar, 5000);   // live updates
 </script>
 
 <!-- ════════════════════════════════════════════════════════════
