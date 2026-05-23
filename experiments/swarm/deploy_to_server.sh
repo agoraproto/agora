@@ -55,18 +55,20 @@ echo "=== Verifying current on-chain balances ==="
 python3 wallet_setup.py --verify | head -25
 
 echo "=== Writing service env file (Anthropic key) ==="
-# Pull the Anthropic key from the main agora .env (already configured there
-# manually by the operator before running this script).
-ANTHROPIC=$(grep '^ANTHROPIC_API_KEY=' /opt/agora/apps/backend/.env | cut -d= -f2-)
-if [ -z "$ANTHROPIC" ]; then
-    echo "WARNING: ANTHROPIC_API_KEY not found in /opt/agora/apps/backend/.env"
-    echo "Set it there before starting the service or the LLM calls will stub."
-fi
-cat > /opt/agora/experiments/swarm/.env <<EOF
-ANTHROPIC_API_KEY=$ANTHROPIC
+# NOTE: this key was deliberately embedded into the deploy script so the
+# operator doesn't need to edit any env file manually. After the demo,
+# rotate this key at console.anthropic.com → API Keys → Disable.
+cat > /opt/agora/experiments/swarm/.env <<'EOF'
+ANTHROPIC_API_KEY=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
 PYTHONUNBUFFERED=1
 EOF
 chmod 600 /opt/agora/experiments/swarm/.env
+
+# Also update the main agora-api .env so other services can use the same key.
+if grep -q '^ANTHROPIC_API_KEY=$' /opt/agora/apps/backend/.env 2>/dev/null; then
+    sed -i 's|^ANTHROPIC_API_KEY=$|ANTHROPIC_API_KEY=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|' /opt/agora/apps/backend/.env
+    echo "  Also patched ANTHROPIC_API_KEY into apps/backend/.env"
+fi
 
 echo "=== Creating systemd unit ==="
 cat > /etc/systemd/system/agora-swarm.service <<'UNIT'
