@@ -445,39 +445,55 @@
         }).join("");
       }
 
-      // Activity feed: most recent jobs from /v1/jobs (search with empty filter)
-      // Note: /v1/jobs may return all; we slice newest 20.
+      // Activity feed: /v1/jobs requires a filter, so we fan out across the
+      // 10 swarm-provider DIDs in parallel, merge, sort by created_at desc.
       try {
-        const jobsR = await fetch(`${API}/v1/jobs?limit=20`, { cache: "no-store" });
-        if (jobsR.ok) {
-          const jd = await jobsR.json();
-          const jobs = jd.jobs || (Array.isArray(jd) ? jd : []);
-          // Sort by created_at desc if present
-          jobs.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-          const feed = document.getElementById("feed");
-          if (!jobs.length) {
-            feed.innerHTML = '<div class="empty">No jobs yet.</div>';
-          } else {
-            // Build a did → agent name map for quick lookup
-            const agentsByDid = {};
-            (agentsData.agents || []).forEach(a => { agentsByDid[a.did] = a; });
+        const agentsByDid = {};
+        (agentsData.agents || []).forEach(a => { agentsByDid[a.did] = a; });
 
-            feed.innerHTML = jobs.slice(0, 20).map(j => {
-              const t = j.created_at ? fmtTime(new Date(j.created_at)) : "—";
-              const fromName = nameFromDid(j.requester_did, agentsByDid);
-              const toName   = nameFromDid(j.provider_did, agentsByDid);
-              const status = j.status || "?";
-              return `
-                <div class="feed-row">
-                  <span class="feed-time">${t}</span>
-                  <span class="feed-body"><span class="from">${escapeHtml(fromName)}</span> → <span class="to">${escapeHtml(toName)}</span></span>
-                  <span class="feed-status status-${status}">${status}</span>
-                </div>
-              `;
-            }).join("");
-          }
+        const providers = (agentsData.agents || []).filter(a => a.did.startsWith("did:agora:swarm-"));
+        const promises = providers.map(p =>
+          fetch(`${API}/v1/jobs?provider_did=${encodeURIComponent(p.did)}`, { cache: "no-store" })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+        );
+        const results = await Promise.all(promises);
+        const merged = [];
+        for (const r of results) {
+          if (!r) continue;
+          const jobs = r.jobs || (Array.isArray(r) ? r : []);
+          merged.push(...jobs);
         }
-      } catch { /* feed optional */ }
+        // de-dupe by id, sort newest first
+        const byId = {};
+        for (const j of merged) {
+          if (j && j.id) byId[j.id] = j;
+        }
+        const jobs = Object.values(byId).sort((a, b) =>
+          (b.created_at || "").localeCompare(a.created_at || "")
+        );
+
+        const feed = document.getElementById("feed");
+        if (!jobs.length) {
+          feed.innerHTML = '<div class="empty">No jobs yet.</div>';
+        } else {
+          feed.innerHTML = jobs.slice(0, 20).map(j => {
+            const t = j.created_at ? fmtTime(new Date(j.created_at)) : "—";
+            const fromName = nameFromDid(j.requester_did, agentsByDid);
+            const toName   = nameFromDid(j.provider_did, agentsByDid);
+            const status = j.status || "?";
+            return `
+              <div class="feed-row">
+                <span class="feed-time">${t}</span>
+                <span class="feed-body"><span class="from">${escapeHtml(fromName)}</span> → <span class="to">${escapeHtml(toName)}</span></span>
+                <span class="feed-status status-${status}">${status}</span>
+              </div>
+            `;
+          }).join("");
+        }
+      } catch (e) {
+        console.warn("feed failed", e);
+      }
 
     } catch (e) {
       console.warn("tick failed", e);
