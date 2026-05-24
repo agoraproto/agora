@@ -99,15 +99,31 @@ class BootstrapResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 
+_B58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _b58encode(data: bytes) -> bytes:
+    """Inline base58btc encoder — avoids the base58 PyPI dep."""
+    n = int.from_bytes(data, "big")
+    out = bytearray()
+    while n > 0:
+        n, r = divmod(n, 58)
+        out.insert(0, _B58_ALPHABET[r])
+    for b in data:
+        if b == 0:
+            out.insert(0, ord(b"1"))
+        else:
+            break
+    return bytes(out)
+
+
 def _ed25519_pubkey_multibase(pubkey_bytes: bytes) -> str:
     """Encode a 32-byte Ed25519 public key as W3C multibase string.
 
-    Format: 'z' (base58btc multibase) + base58(0xed01 + raw_pubkey).
-    See https://w3c-ccg.github.io/multikey/ for the Ed25519Multikey spec.
+    Format: 'z' (base58btc multibase prefix) + base58(0xed01 + raw_pubkey).
     """
-    import base58
     payload = bytes([0xed, 0x01]) + pubkey_bytes
-    return "z" + base58.b58encode(payload).decode("ascii")
+    return "z" + _b58encode(payload).decode("ascii")
 
 
 def _generate_did_document(ed25519_pubkey: bytes, evm_address: str) -> tuple[str, dict[str, Any]]:
