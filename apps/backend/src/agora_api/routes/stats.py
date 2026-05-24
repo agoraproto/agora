@@ -82,4 +82,6 @@ async def stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
             "platform_revenue": str(platform_q.scalar() or Decimal("0")),
             "insurance_pool": str(insurance_q.scalar() or Decimal("0")),
             "total_in_escrow": str(total_escrow_q.scalar() or Decimal("0")),
-            # Sprint 18c: unified currency naming
+            "currency": "EURC",
+        },
+    }

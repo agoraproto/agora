@@ -510,20 +510,10 @@ async def submit_x402_result(
 
 
 class X402ApproveRequest(BaseModel):
-    # Sprint 18a: bundle an optional review with the approve call so the
-    # reputation system actually fills with data. Two convenience modes:
-    #   * `rating` (int 1-5): one-click rating, copied to all 5 dimensions
-    #   * `scores` (dict per-dimension): full granular review
-    # If both are absent, the call still works — just no review is created.
-    rating: int | None = Field(
-        default=None, ge=1, le=5,
-        description="Quick 1-5 rating, applied to all dimensions",
-    )
-    scores: dict[str, Any] | None = Field(
-        default=None,
-        description="Per-dimension scores 1-5: accuracy, speed, cost, reliability, communication",
-    )
-    comment: str | None = Field(default=None, max_length=2000)
+    # No body fields required — the action is implicit in the URL. We
+    # keep an empty model to leave room for future fields (approver_did
+    # signature, idempotency_key, …).
+    pass
 
 
 @router.post(
@@ -616,33 +606,6 @@ async def approve_x402_job(
         listing = await listings_repo.get(session, job.listing_id)
         if listing is not None:
             await listings_repo.increment_sales(session, listing)
-
-    # Sprint 18a: if the caller bundled a review, persist it now atomically.
-    # Either `rating` (one-click) or `scores` (granular) can be set.
-    has_review = body.rating is not None or body.scores is not None
-    if has_review and requester is not None and provider is not None:
-        if body.scores:
-            review_scores = body.scores
-        else:
-            # One-click rating → copy to all 5 dimensions
-            review_scores = {dim: body.rating for dim in
-                             ("accuracy", "speed", "cost", "reliability", "communication")}
-        try:
-            await reviews_repo.create_review(
-                session,
-                job=job,
-                reviewer=requester,
-                reviewee=provider,
-                scores=review_scores,
-                comment=body.comment,
-            )
-        except Exception as e:
-            # Don't fail the approve if review persistence has a problem
-            # (e.g. invalid scores). Log via structlog.
-            import logging
-            logging.getLogger(__name__).warning(
-                "approve %s: review create failed: %s", job.id, e
-            )
 
     # Notify provider that funds were released.
     if provider is not None:
@@ -828,4 +791,82 @@ async def dispute_x402_job(
     raiser = await agents_repo.get_by_did(session, body.raised_by_did)
     if raiser is None:
         raise HTTPException(status_code=404, detail=f"raised_by_did {body.raised_by_did} unknown")
-    if raiser.id not in (job.requester_agent_id, job.pr
+    if raiser.id not in (job.requester_agent_id, job.provider_agent_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"agent {body.raised_by_did} is not a party to job {job_id}",
+        )
+
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: 402 with dispute() instructions ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "dispute",
+            "args": {
+                "jobId": str(onchain_job_id_int),
+                "reason": body.reason,
+            },
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrow.dispute with the parameters in "
+                "X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>. Only the payer or payee can "
+                "dispute; the contract enforces Unauthorized otherwise."
+            ),
+        )
+
+    # ── Step 2: verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    parsed = _find_event(receipt, client.escrow.events.JobDisputed)
+    if parsed is None:
+        raise HTTPException(status_code=402, detail="JobDisputed event missing")
+    if int(parsed["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch")
+
+    # Record the dispute in the disputes table for later resolution.
+    dispute = await disputes_repo.open_dispute(
+        session,
+        job=job,
+        raised_by_id=raiser.id,
+        reason=body.reason,
+        evidence=body.evidence,
+    )
+    job.status = JobStatus.disputed
+    await session.flush()
+
+    # Notify both sides.
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    provider = await agents_repo.get_by_id(session, job.provider_agent_id)
+    payload = {
+        **_job_view(job),
+        "reason": body.reason,
+        "raised_by": body.raised_by_did,
+        "dispute_id": str(dispute.id),
+    }
+    for agent in (requester, provider):
+        if agent is not None:
+            await enqueue_for_agent(
+                session,
+                agent=agent,
+                job_id=job.id,
+                event_type="job.disputed",
+                payload=payload,
+            )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)
