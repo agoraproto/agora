@@ -200,7 +200,10 @@ class Job(Base, TimestampMixin):
     task_spec: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), default=JobStatus.offered)
     price_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"))
-    price_currency: Mapped[str] = mapped_column(String(8), default="EURC")
+    # Sprint 18c: default "USDC" — all on-chain x402 jobs settle in USDC.
+    # Pre-Sprint-11 ledger jobs persist as "EURC" in existing rows, but
+    # everything created from now on is USDC-denominated.
+    price_currency: Mapped[str] = mapped_column(String(8), default="USDC")
     escrow_tx_hash: Mapped[str | None] = mapped_column(Text)
     release_tx_hash: Mapped[str | None] = mapped_column(Text)
     # uint256 jobId returned by AgoraEscrow.createJob(); Numeric(78,0) fits 2**256.
@@ -224,7 +227,8 @@ class LedgerBalance(Base, TimestampMixin):
     __tablename__ = "ledger_balances"
 
     agent_did: Mapped[str] = mapped_column(String(255), primary_key=True)
-    currency: Mapped[str] = mapped_column(String(8), primary_key=True, default="EURC")
+    # Sprint 18c: new ledger balances default to USDC, matching on-chain.
+    currency: Mapped[str] = mapped_column(String(8), primary_key=True, default="USDC")
     available: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"), nullable=False)
     in_escrow: Mapped[Decimal] = mapped_column(Numeric(18, 6), default=Decimal("0"), nullable=False)
 
@@ -430,8 +434,4 @@ class WebhookDelivery(Base, TimestampMixin):
     next_attempt_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
-    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    last_response_status: Mapped[int | None] = mapped_column(default=None, nullable=True)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mappe
