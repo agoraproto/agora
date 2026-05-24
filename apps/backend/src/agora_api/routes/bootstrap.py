@@ -99,33 +99,15 @@ class BootstrapResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 
-_B58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-
-def _b58encode(data: bytes) -> bytes:
-    """Inline base58btc encoder so we don't need an extra dependency."""
-    n = int.from_bytes(data, "big")
-    out = bytearray()
-    while n > 0:
-        n, r = divmod(n, 58)
-        out.insert(0, _B58_ALPHABET[r])
-    # Leading zero bytes are encoded as leading '1' characters.
-    for b in data:
-        if b == 0:
-            out.insert(0, ord(b"1"))
-        else:
-            break
-    return bytes(out)
-
-
 def _ed25519_pubkey_multibase(pubkey_bytes: bytes) -> str:
     """Encode a 32-byte Ed25519 public key as W3C multibase string.
 
-    Format: 'z' (base58btc multibase prefix) + base58(0xed01 + raw_pubkey).
+    Format: 'z' (base58btc multibase) + base58(0xed01 + raw_pubkey).
     See https://w3c-ccg.github.io/multikey/ for the Ed25519Multikey spec.
     """
+    import base58
     payload = bytes([0xed, 0x01]) + pubkey_bytes
-    return "z" + _b58encode(payload).decode("ascii")
+    return "z" + base58.b58encode(payload).decode("ascii")
 
 
 def _generate_did_document(ed25519_pubkey: bytes, evm_address: str) -> tuple[str, dict[str, Any]]:
@@ -297,4 +279,16 @@ async def bootstrap_agent(
         "did": did,
         "name": agent.name,
         "trust_level": agent.trust_level.value if hasattr(agent.trust_level, "value") else str(agent.trust_level),
-        "ed255
+        "ed25519_private_key_hex": ed_priv,
+        "ed25519_public_key_multibase": ed_pub_mb,
+        "evm_address": evm_address,
+        "evm_private_key_hex": evm_priv,
+        "webhook_secret": webhook_secret,
+        "funded_eth_amount": funded_amt,
+        "funded_eth_tx": funded_tx,
+        "warning": (
+            "Save these credentials NOW. The server does NOT store the private "
+            "keys in plaintext. If you lose them, you cannot recover the agent's "
+            "identity or wallet."
+        ),
+    }
