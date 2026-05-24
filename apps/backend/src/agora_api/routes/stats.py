@@ -82,6 +82,9 @@ async def stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
             "platform_revenue": str(platform_q.scalar() or Decimal("0")),
             "insurance_pool": str(insurance_q.scalar() or Decimal("0")),
             "total_in_escrow": str(total_escrow_q.scalar() or Decimal("0")),
-            "currency": "EURC",
+            # Sprint 18c: unified currency naming. Internal ledger pre-Sprint-11
+            # was EURC-denominated, but everything on-chain (x402, escrow,
+            # listings, fees) settles in USDC. We report USDC outward.
+            "currency": "USDC",
         },
     }

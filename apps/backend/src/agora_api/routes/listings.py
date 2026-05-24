@@ -30,22 +30,41 @@ router = APIRouter()
 
 
 class ListingCreateRequest(BaseModel):
-    # seller_kind / seller_did / payout_wallet are required when called
-    # without a Privy login (legacy SDK / seed scripts creating agent
-    # listings). When the request carries a Privy bearer token they
-    # are ignored — the API forces seller_kind="user" and seller_did
-    # to the authenticated user's DID. payout_wallet falls back to the
-    # user's primary_wallet if absent.
-    seller_kind: str | None = Field(default=None, description="'agent' or 'user' — ignored when authed")
-    seller_did: str | None = Field(default=None, description="DID of the seller — ignored when authed")
-    payout_wallet: str | None = Field(default=None, description="EVM payout address (default = primary_wallet)")
+    # AUTH-AWARE FIELDS (Sprint 18b doc clarification):
+    # - Anonymous calls (no Privy bearer token): seller_kind, seller_did,
+    #   AND payout_wallet are ALL required. Returns 400 if any is missing.
+    # - Authed calls (Privy token in Authorization header): all three are
+    #   ignored — the API forces seller_kind="user", seller_did=user.did,
+    #   payout_wallet falls back to user.primary_wallet if absent.
+    seller_kind: str | None = Field(
+        default=None,
+        description="'agent' or 'user'. Required when calling without a "
+                    "Privy login. Ignored (forced to 'user') when authed.",
+    )
+    seller_did: str | None = Field(
+        default=None,
+        description="DID of the seller. Required when calling without a "
+                    "Privy login. Ignored when authed.",
+    )
+    payout_wallet: str | None = Field(
+        default=None,
+        description="EVM address (0x…) where USDC payouts land. REQUIRED "
+                    "for anonymous (non-authed) calls — first POST without "
+                    "this field will 400. For authed calls falls back to "
+                    "the user's primary_wallet from Privy.",
+    )
     listing_type: str = Field(..., description="'service' or 'digital_product'")
     title: str = Field(..., min_length=2, max_length=255)
     description: str = Field(default="", max_length=10_000)
     category: str = Field(default="other", max_length=64)
     tags: list[str] = Field(default_factory=list)
-    price_amount: str = Field(..., description="USDC amount, decimal string (e.g. '2.50')")
-    price_currency: str = Field(default="USDC")
+    price_amount: str = Field(
+        ...,
+        description="USDC amount as decimal string (e.g. '0.51', '2.50'). "
+                    "On-chain min is 0 USDC (Sprint 16), but the buyer pays "
+                    "0.1% platform fee + 10% insurance share of that fee.",
+    )
+    price_currency: str = Field(default="USDC", description="Always 'USDC' on Base Sepolia.")
     service_capability: str | None = None
     service_input_schema: dict[str, Any] | None = None
     digital_content_type: str | None = None
@@ -155,20 +174,10 @@ async def create_listing(
         ) from e
     if price <= 0:
         raise HTTPException(status_code=400, detail="price_amount must be > 0")
-    # Sprint 10e: the on-chain AgoraEscrow contract reverts createJob
-    # with AmountTooSmall() if amount <= minFee (0.50 USDC). Listings
-    # below that price are unbuyable, so reject at create-time with a
-    # clear error. Buyer pays platform fee + insurance out of this, so
-    # we recommend 1.00+ to leave the seller something.
-    if price <= Decimal("0.50"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "price_amount must be greater than 0.50 USDC "
-                "(the on-chain escrow's minimum fee). "
-                "Try 1.00 USDC or higher so the seller nets something after fees."
-            ),
-        )
+    # Sprint 16: removed the previous price > 0.50 USDC requirement.
+    # The on-chain contract now has minFee = 0 and feeBps = 10 (0.10%),
+    # designed for high-volume micro-transactions between AI agents.
+    # Listings as low as 0.001 USDC are buyable.
 
     if lt == ListingType.service and not body.service_capability:
         raise HTTPException(

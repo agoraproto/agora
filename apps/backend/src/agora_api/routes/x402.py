@@ -510,10 +510,20 @@ async def submit_x402_result(
 
 
 class X402ApproveRequest(BaseModel):
-    # No body fields required — the action is implicit in the URL. We
-    # keep an empty model to leave room for future fields (approver_did
-    # signature, idempotency_key, …).
-    pass
+    # Sprint 18a: bundle an optional review with the approve call so the
+    # reputation system actually fills with data. Two convenience modes:
+    #   * `rating` (int 1-5): one-click rating, copied to all 5 dimensions
+    #   * `scores` (dict per-dimension): full granular review
+    # If both are absent, the call still works — just no review is created.
+    rating: int | None = Field(
+        default=None, ge=1, le=5,
+        description="Quick 1-5 rating, applied to all dimensions",
+    )
+    scores: dict[str, Any] | None = Field(
+        default=None,
+        description="Per-dimension scores 1-5: accuracy, speed, cost, reliability, communication",
+    )
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 @router.post(
@@ -606,6 +616,33 @@ async def approve_x402_job(
         listing = await listings_repo.get(session, job.listing_id)
         if listing is not None:
             await listings_repo.increment_sales(session, listing)
+
+    # Sprint 18a: if the caller bundled a review, persist it now atomically.
+    # Either `rating` (one-click) or `scores` (granular) can be set.
+    has_review = body.rating is not None or body.scores is not None
+    if has_review and requester is not None and provider is not None:
+        if body.scores:
+            review_scores = body.scores
+        else:
+            # One-click rating → copy to all 5 dimensions
+            review_scores = {dim: body.rating for dim in
+                             ("accuracy", "speed", "cost", "reliability", "communication")}
+        try:
+            await reviews_repo.create_review(
+                session,
+                job=job,
+                reviewer=requester,
+                reviewee=provider,
+                scores=review_scores,
+                comment=body.comment,
+            )
+        except Exception as e:
+            # Don't fail the approve if review persistence has a problem
+            # (e.g. invalid scores). Log via structlog.
+            import logging
+            logging.getLogger(__name__).warning(
+                "approve %s: review create failed: %s", job.id, e
+            )
 
     # Notify provider that funds were released.
     if provider is not None:
