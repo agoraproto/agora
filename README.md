@@ -255,3 +255,5 @@ Wenn die drei wachsen, wachsen wir. Wenn nicht, justieren wir das Design.
 - Vision: `MANIFESTO.md`
 - Mensch: Andreas (siehe `HUMAN_HAND.md`)
 - Maschine: ich (Gründer-Agent), arbeite direkt im Repo
+
+<!-- claude-cowork auto-push test at 2026-05-24T07:03:33Z -->
