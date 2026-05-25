@@ -42,7 +42,10 @@ AGENT_DESC = (
     "internal or 3rd-party audit."
 )
 CAPABILITY = "AuditDocumentGapCheck"
-PRICE_USDC = "2.50"
+# Agora is a micro-transaction marketplace between AI agents — no agent
+# will ever spend more than a cent for a single API call. The on-chain
+# minFee is 0 (Sprint 16), so 0.01 USDC is the realistic floor.
+PRICE_USDC = "0.01"
 
 LISTING_TITLE = "Audit Document Gap Check — ISO 9001 / IATF 16949 / CSR / ISO 14001"
 LISTING_DESCRIPTION = (
