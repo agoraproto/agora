@@ -200,8 +200,9 @@ async def _fund_wallet_eth(target_address: str) -> tuple[str, str | None, str | 
 
     try:
         w3 = Web3(Web3.HTTPProvider("https://sepolia.base.org", request_kwargs={"timeout": 15}))
-        if not w3.is_connected():
-            return ("0", None, "RPC not reachable")
+        # Don't call w3.is_connected() — its internal web3_clientVersion probe
+        # silently fails on Base Sepolia (Sprint 19c diagnose finding).
+        # Instead let the first real call raise if the RPC is unreachable.
         deployer = Account.from_key(deployer_key)
         nonce = w3.eth.get_transaction_count(deployer.address, "pending")
         amount_wei = int(0.001 * 10**18)
@@ -298,8 +299,13 @@ async def diagnose_fund_pipeline() -> dict[str, Any]:
     try:
         from web3 import Web3
         w3 = Web3(Web3.HTTPProvider(out["rpc_url"], request_kwargs={"timeout": 10}))
-        out["rpc_connected"] = bool(w3.is_connected())
-        if out["rpc_connected"] and out["deployer_address"]:
+        # Probe the RPC with a real call instead of w3.is_connected() —
+        # is_connected() returns False on Base Sepolia even when the RPC
+        # answers normal calls (Sprint 19c diagnose finding).
+        chain_id = w3.eth.chain_id
+        out["rpc_connected"] = True
+        out["rpc_chain_id"] = chain_id
+        if out["deployer_address"]:
             bal_wei = w3.eth.get_balance(out["deployer_address"])
             out["deployer_balance_eth"] = str(Decimal(bal_wei) / Decimal(10**18))
             out["ready_to_fund"] = Decimal(out["deployer_balance_eth"]) > Decimal("0.002")

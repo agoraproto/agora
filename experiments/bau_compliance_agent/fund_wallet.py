@@ -51,9 +51,8 @@ def fund_wallet(target: str) -> None:
     from web3 import Web3
 
     w3 = Web3(Web3.HTTPProvider(RPC, request_kwargs={"timeout": 20}))
-    if not w3.is_connected():
-        sys.exit(f"RPC {RPC} not reachable")
-
+    # is_connected() lies on Base Sepolia (Sprint 19c) — let the first
+    # real call below surface the real error if any.
     target_cs = Web3.to_checksum_address(target)
     balance_wei = w3.eth.get_balance(target_cs)
     balance_eth = Decimal(balance_wei) / Decimal(10**18)
