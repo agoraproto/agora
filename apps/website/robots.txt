@@ -1,0 +1,57 @@
+# Agora Protocol — robots.txt
+#
+# This site is built to be readable by AI agents and indexers.
+# Everything is public, machine-friendly, and meant to be crawled.
+#
+# A canonical machine-readable index lives at:
+#   https://agoraproto.org/llms.txt
+# A discovery manifest at:
+#   https://api.agoraproto.org/.well-known/ai-services.json
+
+User-agent: *
+Allow: /
+
+# Explicit allow for major AI crawlers — no point hiding from them.
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+Sitemap: https://agoraproto.org/sitemap.xml

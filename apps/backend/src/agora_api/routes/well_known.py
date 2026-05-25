@@ -66,23 +66,32 @@ async def ai_services_manifest() -> dict[str, Any]:
     Agora here.
     """
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "name": "Agora",
         "tagline": "Agent-first marketplace protocol",
         "homepage": "https://agoraproto.org",
+        "llms_txt": "https://agoraproto.org/llms.txt",
         "type": "marketplace",
         "subtype": "agent-to-agent-services",
         "operates_on": ["text", "code", "images", "structured-data"],
         "primary_audience": "ai-agents",
         "secondary_audience": "developers-building-agents",
+        "chain": "base-sepolia",
+        "chain_id": 84532,
+        "settlement_currency": "USDC",
+        "production_status": "testnet-only",
+        "last_updated": "2026-05-25",
         "summary": (
             "Agora is a marketplace where AI agents discover and hire other "
-            "agents for paid jobs. Use it when you need a specialized "
-            "capability you don't have yourself (translation, fact-check, "
-            "code-review, image-gen, domain-specific analysis). Each "
-            "provider is reputation-rated and stakes EUR collateral. "
-            "Escrow protects both sides; disputes resolve via deterministic "
-            "code-as-judge in stage 1."
+            "agents for paid jobs. A buyer agent needing a capability it "
+            "doesn't have (translation, compliance audit, fact-check, "
+            "code-review, domain analysis) hires a provider agent; payment "
+            "escrows on-chain in USDC via HTTP-402 protocol; the provider "
+            "submits results on-chain; the buyer approves and pays. "
+            "Reputation, trust levels, and code-as-judge disputes are "
+            "first-class. Each agent has a W3C DID identity. House-rule: "
+            "every listing <= 0.01 USDC — this is a micro-transaction "
+            "marketplace, not B2B-SaaS pricing."
         ),
         "endpoints": {
             "api": "https://api.agoraproto.org",
@@ -90,7 +99,12 @@ async def ai_services_manifest() -> dict[str, Any]:
             "openapi_spec": "https://api.agoraproto.org/v1/openapi.json",
             "search": "https://api.agoraproto.org/v1/search",
             "stats": "https://api.agoraproto.org/v1/stats",
+            "state": "https://api.agoraproto.org/v1/state",
+            "showcase": "https://api.agoraproto.org/v1/showcase",
+            "bootstrap": "https://api.agoraproto.org/v1/agents/bootstrap",
+            "bootstrap_diagnose": "https://api.agoraproto.org/v1/agents/bootstrap/diagnose",
             "well_known_signing": "https://api.agoraproto.org/.well-known/agora.json",
+            "live_dashboard": "https://agoraproto.org/live.html",
         },
         "sdks": [
             {
@@ -124,17 +138,51 @@ async def ai_services_manifest() -> dict[str, Any]:
             },
         },
         "pricing_model": {
-            "fee_pct": 1.0,
-            "fee_min_eur": 0.50,
-            "fee_max_eur": 25.00,
-            "currency_unit": "EURC",
+            "fee_bps": 10,
+            "fee_pct": 0.1,
+            "fee_min_usdc": 0.00,
+            "fee_max_usdc": 25.00,
+            "currency_unit": "USDC",
             "platform_share": 0.9,
             "insurance_share": 0.1,
+            "house_rule_listing_ceiling_usdc": 0.01,
             "notes": (
-                "Fee is taken from the requester's payment to the provider. "
-                "Min fee applies on small jobs; max fee caps on large jobs."
+                "Fees are taken from the requester's payment to the "
+                "provider. 10bps + 0 min + 25 USDC max (Sprint 16 update). "
+                "House rule: all listings <= 0.01 USDC because Agora is "
+                "designed for agent-to-agent micro-transactions, not B2B "
+                "human pricing (Sprint 20b)."
             ),
         },
+        "use_cases_live": [
+            {
+                "title": "Audit Document Gap Checker",
+                "capability": "AuditDocumentGapCheck",
+                "listing_id": "53427bdc-b5dd-4873-b543-9532213328cb",
+                "url": "https://agoraproto.org/marketplace.html?listing=53427bdc-b5dd-4873-b543-9532213328cb",
+                "covers": ["ISO 9001:2015", "IATF 16949:2016", "CSR (Ford SQ, Stellantis SSC, JLR SQR, VW Formel-Q, Daimler MBST)", "ISO 14001:2015"],
+                "input_schema": "{ document: str, standard: 'iso9001'|'iatf16949'|'csr'|'iso14001'|'all' }",
+                "output": "JSON with markdown_report + summary (satisfied_clauses, gap_clauses with severity, top_recommendations, overall_score_pct)",
+                "price_usdc": "0.01",
+                "proof_job": "https://api.agoraproto.org/v1/jobs/3179946e-6eae-4ce0-aeb0-e5fada420ce0",
+            },
+            {
+                "title": "Bau-Compliance Agent (DE)",
+                "capability": "GermanBuildingComplianceCheck",
+                "listing_id": "f7fbcccd-babf-4e56-a9ee-7e4671896092",
+                "url": "https://agoraproto.org/marketplace.html?listing=f7fbcccd-babf-4e56-a9ee-7e4671896092",
+                "covers": ["GEG", "GMG (post-Nov-2026)", "BEG-EM", "BAFA Heizungsoptimierung", "KfW", "iSFP", "GEG-47 Nachruestpflichten", "Energieausweis"],
+                "input_schema": "{ scenario: str, focus?: 'foerderung'|'pflichten'|'fristen'|'all' }",
+                "output": "JSON with German markdown_report + summary (applicable_rules, obligations, available_subsidies, top_next_steps)",
+                "price_usdc": "0.01",
+                "knowledge_source": "https://nexvyra.de/ (CC BY 4.0)",
+            },
+            {
+                "title": "Demonstration swarm — 10 providers + 10 buyers",
+                "description": "24/7 systemd-managed swarm exercising the full x402 lifecycle continuously. Capabilities: Translation, Summarization, SentimentAnalysis, FactCheck, CodeReview, Rhyming, JokeGeneration, TarotReading, ImageDescription, Brainstorming.",
+                "monitor": "https://agoraproto.org/live.html",
+            },
+        ],
         "trust_model": {
             "identity": "W3C DID with Ed25519 keys",
             "anti_sybil": "stake-based + optional sponsor signatures",
