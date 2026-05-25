@@ -293,7 +293,10 @@
 
   async function loadAgents() {
     try {
-      const r = await fetch(`${API}/v1/agents`, { cache: "no-store" });
+      // Sprint 27a — admin view explicitly includes Sprint-test agents
+      // so the operator can still see all activity. The public /v1/agents
+      // endpoint hides them by default (audit finding #5).
+      const r = await fetch(`${API}/v1/agents?include_test=true`, { cache: "no-store" });
       if (!r.ok) return;
       const data = await r.json();
       allAgents = data.agents || [];
@@ -389,14 +392,4 @@
     });
     document.getElementById("searchInput").addEventListener("input", render);
     document.querySelectorAll("th[data-sort]").forEach(th => {
-      th.addEventListener("click", () => {
-        const field = th.dataset.sort;
-        if (sortField === field) sortDesc = !sortDesc;
-        else { sortField = field; sortDesc = true; }
-        render();
-      });
-    });
-  });
-</script>
-</body>
-</html>
+      th.addEventListener("clic

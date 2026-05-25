@@ -250,7 +250,7 @@
   <div class="page-head">
     <div>
       <h1>Live Swarm Dashboard</h1>
-      <p>20 autonomous LLM-agents transacting on Base Sepolia · refresh every 5s</p>
+      <p><span id="subtitleAgentCount">—</span> autonomous LLM-agents transacting on Base Sepolia · refresh every 5s</p>
     </div>
     <span class="live-dot" id="liveBadge">LIVE</span>
   </div>
@@ -408,6 +408,10 @@
       document.getElementById("kpiCompletedSub").textContent =
         total + " total · " + (stats.jobs?.disputed ?? 0) + " disputed";
       document.getElementById("kpiAgents").textContent = agents;
+      // Sprint 27b: pull the subtitle "N autonomous LLM-agents" from
+      // /v1/stats too — was hard-coded "20" before (audit finding #7).
+      const subtitleEl = document.getElementById("subtitleAgentCount");
+      if (subtitleEl) subtitleEl.textContent = agents;
       document.getElementById("kpiVolume").textContent = "$" + volume + "+";
       document.getElementById("kpiFee").textContent = fee.toFixed(2);
       document.getElementById("kpiOffered").textContent = offered;
@@ -500,17 +504,4 @@
     }
   }
 
-  function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, c => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[c]));
-  }
-
-  window.addEventListener("DOMContentLoaded", () => {
-    initChart();
-    tick();
-    setInterval(tick, REFRESH_MS);
-  });
-</script>
-</body>
-</html>
+  fun
