@@ -125,13 +125,33 @@ async def main() -> None:
 
     # ── 3. Approve & pay ─────────────────────────────────────────
     print("\n[3/4] approveAndPay — releasing escrow to the provider")
-    await approve_with_x402(
-        API,
-        job_id=job_id,
-        rpc_url=RPC,
-        private_key=buyer_key,
-    )
-    print(f"  ✓ escrow released")
+    # Race condition: if the buyer DID belongs to a swarm Buyer, its
+    # systemd loop may already have approved this job on its own poll
+    # cycle, leaving the on-chain status = Approved. Our own approve
+    # would then revert with InvalidStatus(0xf525e320). Treat that as
+    # "already approved by the other agent" — the job is paid either way.
+    try:
+        await approve_with_x402(
+            API,
+            job_id=job_id,
+            rpc_url=RPC,
+            private_key=buyer_key,
+        )
+        print(f"  ✓ escrow released")
+    except Exception as e:
+        msg = str(e)
+        is_invalid_status = "0xf525e320" in msg or "InvalidStatus" in msg
+        if not is_invalid_status:
+            raise
+        async with httpx.AsyncClient(timeout=15) as http:
+            r = await http.get(f"{API}/v1/jobs/{job_id}")
+        full = r.json() if r.status_code == 200 else {}
+        if full.get("status") == "completed":
+            print(f"  ✓ already approved by another agent "
+                  f"(swarm buyer loop won the race) — job is paid")
+        else:
+            print(f"  ✗ InvalidStatus but DB status is {full.get('status')!r}")
+            raise
 
     # ── 4. Fetch the actual result envelope ──────────────────────
     print("\n[4/4] Fetching the result envelope")
