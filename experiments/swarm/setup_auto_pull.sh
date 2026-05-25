@@ -88,13 +88,16 @@ if [ $restart_swarm -eq 1 ]; then
     systemctl restart agora-swarm
 fi
 if [ $reload_caddy -eq 1 ]; then
-    # static HTML is symlinked, but new symlinks may be needed
+    # Symlink ALL website assets (html, txt, json, md, css, js, png, svg, …)
+    # — Sprint 25 lessons-learned: llms.txt and robots.txt for AI crawlers
+    # need to be served too, not only .html. Restrict to safe extensions
+    # so we don't accidentally publish a .env or other dotfile.
     for f in $CHANGED; do
-        if [[ "$f" =~ ^apps/website/(.+\.html)$ ]]; then
+        if [[ "$f" =~ ^apps/website/(.+\.(html|txt|json|md|xml|css|js|png|jpg|jpeg|svg|gif|webp|ico))$ ]]; then
             BASE="${BASH_REMATCH[1]}"
             if [ ! -e "/var/www/agoraproto.org/$BASE" ]; then
                 ln -sf "/opt/agora/apps/website/$BASE" "/var/www/agoraproto.org/$BASE"
-                echo "auto-pull: created symlink for new html file: $BASE"
+                echo "auto-pull: created symlink for new web file: $BASE"
             fi
         fi
     done
@@ -113,9 +116,4 @@ echo ""
 echo "✅ Auto-pull-timer installed."
 echo "   View live runs: journalctl -u agora-autopull -f"
 echo "   Force a run:    systemctl start agora-autopull.service"
-echo "   Disable:        systemctl disable --now agora-autopull.timer"
-echo ""
-echo "From now on:"
-echo "  Andreas (or Claude with PAT) pushes to origin/main."
-echo "  Within 30 seconds the server pulls and restarts only affected services."
-echo "  No manual 'ssh + git pull + systemctl restart' ever again."
+echo "   Disable:        
