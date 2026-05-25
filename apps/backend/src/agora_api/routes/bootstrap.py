@@ -91,6 +91,7 @@ class BootstrapResponse(BaseModel):
     webhook_secret: str
     funded_eth_amount: str
     funded_eth_tx: str | None
+    funded_eth_error: str | None
     warning: str
 
 
@@ -103,12 +104,13 @@ _B58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
 def _b58encode(data: bytes) -> bytes:
-    """Inline base58btc encoder — avoids the base58 PyPI dep."""
+    """Inline base58btc encoder so we don't need an extra dependency."""
     n = int.from_bytes(data, "big")
     out = bytearray()
     while n > 0:
         n, r = divmod(n, 58)
         out.insert(0, _B58_ALPHABET[r])
+    # Leading zero bytes are encoded as leading '1' characters.
     for b in data:
         if b == 0:
             out.insert(0, ord(b"1"))
@@ -121,6 +123,7 @@ def _ed25519_pubkey_multibase(pubkey_bytes: bytes) -> str:
     """Encode a 32-byte Ed25519 public key as W3C multibase string.
 
     Format: 'z' (base58btc multibase prefix) + base58(0xed01 + raw_pubkey).
+    See https://w3c-ccg.github.io/multikey/ for the Ed25519Multikey spec.
     """
     payload = bytes([0xed, 0x01]) + pubkey_bytes
     return "z" + _b58encode(payload).decode("ascii")
@@ -159,43 +162,46 @@ def _generate_did_document(ed25519_pubkey: bytes, evm_address: str) -> tuple[str
     return did, doc
 
 
-async def _fund_wallet_eth(target_address: str) -> tuple[str, str | None]:
+async def _fund_wallet_eth(target_address: str) -> tuple[str, str | None, str | None]:
     """Send 0.001 ETH from the deployer wallet to target_address.
 
-    Returns (amount_sent_eth, tx_hash_or_none). If the deployer key isn't
-    configured or the send fails, we return ("0", None) and the agent
-    just doesn't get auto-funded — they can still register, they'll just
-    need to find another way to get gas.
+    Returns (amount_sent_eth, tx_hash_or_none, error_or_none). When fund
+    fails we surface the reason in the third return value so the caller
+    can see why (e.g. permission, key not found, RPC error).
     """
     try:
         from web3 import Web3
-    except ImportError:
-        return ("0", None)
+    except ImportError as e:
+        return ("0", None, f"web3 import failed: {e}")
 
-    # Look for the deployer key in the standard location used by the swarm.
     key_paths = [
         "/opt/agora/experiments/swarm/.deployer-key",
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..",
                      "experiments", "swarm", ".deployer-key"),
     ]
     deployer_key: str | None = None
+    last_err = None
     for p in key_paths:
         try:
             if os.path.isfile(p):
                 with open(p) as f:
                     deployer_key = f.read().strip()
                     break
-        except Exception:
-            continue
+            else:
+                last_err = f"not a file: {p}"
+        except PermissionError as e:
+            last_err = f"permission denied on {p}: {e}"
+        except Exception as e:
+            last_err = f"read {p} failed: {e}"
     if not deployer_key:
-        return ("0", None)
+        return ("0", None, last_err or "deployer key not found in any of the configured paths")
     if not deployer_key.startswith("0x"):
         deployer_key = "0x" + deployer_key
 
     try:
         w3 = Web3(Web3.HTTPProvider("https://sepolia.base.org", request_kwargs={"timeout": 15}))
         if not w3.is_connected():
-            return ("0", None)
+            return ("0", None, "RPC not reachable")
         deployer = Account.from_key(deployer_key)
         nonce = w3.eth.get_transaction_count(deployer.address, "pending")
         amount_wei = int(0.001 * 10**18)
@@ -210,9 +216,97 @@ async def _fund_wallet_eth(target_address: str) -> tuple[str, str | None]:
         }
         signed = deployer.sign_transaction(tx)
         h = w3.eth.send_raw_transaction(signed.raw_transaction)
-        return ("0.001", "0x" + h.hex())
-    except Exception:
-        return ("0", None)
+        return ("0.001", "0x" + h.hex(), None)
+    except Exception as e:
+        return ("0", None, f"on-chain send failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Diagnose endpoint (Sprint 19c) — surfaces the exact reason the
+# server can or cannot fund a new wallet. Useful when bootstrap returns
+# `funded_eth_amount: 0` and we don't yet know whether the cause is a
+# permission issue on .deployer-key, an unreachable RPC, an empty
+# deployer wallet, or something else.
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/diagnose",
+    summary="Diagnose the auto-fund pipeline (no agent created)",
+)
+async def diagnose_fund_pipeline() -> dict[str, Any]:
+    """Probe everything _fund_wallet_eth needs to succeed.
+
+    No agent is created. Safe to call from anywhere — the response only
+    exposes the deployer's PUBLIC address and balance, never the key.
+    """
+    out: dict[str, Any] = {
+        "process_uid": os.getuid() if hasattr(os, "getuid") else None,
+        "process_euid": os.geteuid() if hasattr(os, "geteuid") else None,
+        "key_paths_tried": [],
+        "key_readable": False,
+        "key_readable_path": None,
+        "key_read_error": None,
+        "deployer_address": None,
+        "rpc_url": "https://sepolia.base.org",
+        "rpc_connected": False,
+        "rpc_error": None,
+        "deployer_balance_eth": None,
+        "ready_to_fund": False,
+    }
+
+    key_paths = [
+        "/opt/agora/experiments/swarm/.deployer-key",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..",
+                     "experiments", "swarm", ".deployer-key"),
+    ]
+    deployer_key: str | None = None
+    last_err = None
+    for p in key_paths:
+        info: dict[str, Any] = {"path": p, "exists": False, "is_file": False, "stat": None, "read_error": None}
+        try:
+            info["exists"] = os.path.exists(p)
+            info["is_file"] = os.path.isfile(p)
+            if info["is_file"]:
+                st = os.stat(p)
+                info["stat"] = {"mode_octal": oct(st.st_mode & 0o777), "uid": st.st_uid, "gid": st.st_gid, "size": st.st_size}
+                with open(p) as f:
+                    deployer_key = f.read().strip()
+        except PermissionError as e:
+            info["read_error"] = f"PermissionError: {e}"
+            last_err = info["read_error"]
+        except Exception as e:
+            info["read_error"] = f"{type(e).__name__}: {e}"
+            last_err = info["read_error"]
+        out["key_paths_tried"].append(info)
+        if deployer_key:
+            out["key_readable"] = True
+            out["key_readable_path"] = p
+            break
+    if not deployer_key:
+        out["key_read_error"] = last_err or "deployer key not found in any of the configured paths"
+        return out
+
+    try:
+        if not deployer_key.startswith("0x"):
+            deployer_key = "0x" + deployer_key
+        out["deployer_address"] = Account.from_key(deployer_key).address
+    except Exception as e:
+        out["key_read_error"] = f"key invalid: {e}"
+        return out
+
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(out["rpc_url"], request_kwargs={"timeout": 10}))
+        out["rpc_connected"] = bool(w3.is_connected())
+        if out["rpc_connected"] and out["deployer_address"]:
+            bal_wei = w3.eth.get_balance(out["deployer_address"])
+            out["deployer_balance_eth"] = str(Decimal(bal_wei) / Decimal(10**18))
+            out["ready_to_fund"] = Decimal(out["deployer_balance_eth"]) > Decimal("0.002")
+    except Exception as e:
+        out["rpc_error"] = f"{type(e).__name__}: {e}"
+
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -287,9 +381,9 @@ async def bootstrap_agent(
         raise HTTPException(status_code=500, detail=f"failed to register: {e}") from e
 
     # 5. Optionally fund wallet for gas
-    funded_amt, funded_tx = ("0", None)
+    funded_amt, funded_tx, fund_err = ("0", None, "fund_eth disabled by caller")
     if body.fund_eth:
-        funded_amt, funded_tx = await _fund_wallet_eth(evm_address)
+        funded_amt, funded_tx, fund_err = await _fund_wallet_eth(evm_address)
 
     return {
         "did": did,
@@ -302,6 +396,7 @@ async def bootstrap_agent(
         "webhook_secret": webhook_secret,
         "funded_eth_amount": funded_amt,
         "funded_eth_tx": funded_tx,
+        "funded_eth_error": fund_err,
         "warning": (
             "Save these credentials NOW. The server does NOT store the private "
             "keys in plaintext. If you lose them, you cannot recover the agent's "

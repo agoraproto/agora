@@ -205,6 +205,8 @@ def main() -> None:
         print(f"evm_address = {creds['evm_address']}")
         print(f"funded      = {creds.get('funded_eth_amount')} ETH "
               f"tx={creds.get('funded_eth_tx')}")
+        if creds.get("funded_eth_error"):
+            print(f"fund_error  = {creds['funded_eth_error']}")
         return
 
     if args.listing:
