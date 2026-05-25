@@ -948,7 +948,8 @@
 <!-- ════════════════════════════════════════════════════════════
      MODAL
 ════════════════════════════════════════════════════════════ -->
-<div class="modal-backdrop" id="modal">
+<!-- Sprint 27e: inline style prevents FOUC of modal template -->
+<div class="modal-backdrop" id="modal" style="display: none;">
   <div class="modal">
     <button class="modal-close" id="modalClose" aria-label="Close">×</button>
     <div class="modal-cover">

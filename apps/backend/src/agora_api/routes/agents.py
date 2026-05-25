@@ -169,9 +169,40 @@ async def get_agent(
     return agents_repo.to_public_dict(agent)
 
 
+# Test-data heuristic (Sprint 27a — external audit finding #5).
+# Sprint-19 verification agents and bootstrap-funding probes are
+# development artefacts that pollute the public registry. Filter them
+# out of the default listing; callers who deliberately want to see
+# them (debug dashboards, the audit dashboard itself) can pass
+# ?include_test=true.
+
+
+def _is_test_agent(agent: Any) -> bool:
+    """Heuristic: name or capability tags this as a development artefact."""
+    import re
+    name = (getattr(agent, "name", "") or "").strip().lower()
+    if re.match(r"^sprint\s+\d", name):
+        return True
+    if name.startswith("test "):
+        return True
+    caps = getattr(agent, "capabilities", []) or []
+    bad = ("sprint", "debug", "test", "bootstrapautofund")
+    for c in caps:
+        ctype = (c.get("type", "") if isinstance(c, dict) else "").lower()
+        if any(s in ctype for s in bad):
+            return True
+    return False
+
+
 @router.get("")
-async def list_agents(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def list_agents(
+    session: AsyncSession = Depends(get_session),
+    include_test: bool = False,
+) -> dict[str, Any]:
+    """List active agents. Pass ?include_test=true to include Sprint-test agents."""
     agents = await agents_repo.list_all(session)
+    if not include_test:
+        agents = [a for a in agents if not _is_test_agent(a)]
     return {
         "total": len(agents),
         "agents": [agents_repo.to_public_dict(a) for a in agents],

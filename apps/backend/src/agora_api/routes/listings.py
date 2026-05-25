@@ -85,6 +85,19 @@ def _parse_kind(s: str) -> ListingKind:
         ) from e
 
 
+# Test-data heuristic (Sprint 27a — audit finding #6).
+_DEMO_SELLER_PREFIXES = ("did:agora:demo_",)
+_DEMO_TITLE_MARKERS = ("sprint 10d", "live test", "smoke test", "demo only")
+
+
+def _is_test_listing(listing: Any) -> bool:
+    seller = (getattr(listing, "seller_did", "") or "").lower()
+    if any(seller.startswith(p) for p in _DEMO_SELLER_PREFIXES):
+        return True
+    title = (getattr(listing, "title", "") or "").lower()
+    return any(m in title for m in _DEMO_TITLE_MARKERS)
+
+
 def _parse_type(s: str) -> ListingType:
     try:
         return ListingType(s)
@@ -224,8 +237,10 @@ async def list_listings(
     max_price: str | None = None,
     limit: int = 60,
     offset: int = 0,
+    include_test: bool = False,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
+    """Browse marketplace listings. Default hides demo/test listings (Sprint 27a). Pass ?include_test=true to include."""
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=400, detail="limit must be in 1..200")
     if offset < 0:
@@ -251,6 +266,8 @@ async def list_listings(
         limit=limit,
         offset=offset,
     )
+    if not include_test:
+        listings = [L for L in listings if not _is_test_listing(L)]
     return {
         "total": len(listings),
         "limit": limit,

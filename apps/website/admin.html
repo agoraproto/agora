@@ -293,7 +293,8 @@
 
   async function loadAgents() {
     try {
-      const r = await fetch(`${API}/v1/agents`, { cache: "no-store" });
+      // Sprint 27a: admin view explicitly opts in to test agents.
+      const r = await fetch(`${API}/v1/agents?include_test=true`, { cache: "no-store" });
       if (!r.ok) return;
       const data = await r.json();
       allAgents = data.agents || [];
