@@ -125,7 +125,13 @@ async def _create_personal_agent(
     webhook_secret = secrets.token_urlsafe(32)
     secret_hash = hashlib.sha256(webhook_secret.encode("utf-8")).hexdigest()
 
-    display_name = user.email or f"User {user.did.split(':')[-1][:8]}"
+    # Sprint 26 — CRITICAL privacy fix.
+    # Never use the user's raw email address as a public agent name. The
+    # agent name is rendered on dashboard.agoraproto.org and indexable by
+    # search engines; persisting an email there violates GDPR Art. 5(1)(c)
+    # data minimisation and exposes a PII identifier we don't need.
+    # Always derive an anonymised handle from the DID instead.
+    display_name = f"User {user.did.split(':')[-1][:8]}"
     agent = Agent(
         did=user.did,
         did_document={
