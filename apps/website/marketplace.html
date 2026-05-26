@@ -834,7 +834,22 @@
     margin-top: 14px;
     line-height: 1.5;
   }
+
+  /* Sprint 29a — login modal: two-line button labels (no emoji clutter). */
+  .auth-method {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 12px 16px;
+  }
+  .auth-method-title { font-weight: 600; font-size: 0.95rem; }
+  .auth-method-sub { font-size: 0.78rem; color: var(--text-faint); }
+  .auth-method[disabled] { pointer-events: none; }
 </style>
+
+<!-- Sprint 29b — shared navigation -->
+<script src="/nav.js" defer></script>
 </head>
 <body>
 
@@ -871,10 +886,12 @@
     <div id="authError"></div>
 
     <button class="auth-method" id="authConnectWallet">
-      <span>🦊</span> Connect Wallet (MetaMask / WalletConnect)
+      <span class="auth-method-title">Connect a wallet</span>
+      <span class="auth-method-sub">MetaMask &middot; WalletConnect &middot; embedded</span>
     </button>
-    <button class="auth-method" id="authGoogle">
-      <span>🅖</span> Continue with Google (coming soon)
+    <button class="auth-method" id="authGoogle" disabled style="opacity: 0.55; cursor: not-allowed;">
+      <span class="auth-method-title">Continue with Google</span>
+      <span class="auth-method-sub">coming soon</span>
     </button>
 
     <div class="auth-divider">— or —</div>

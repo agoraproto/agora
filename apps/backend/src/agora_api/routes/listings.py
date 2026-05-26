@@ -90,6 +90,27 @@ _DEMO_SELLER_PREFIXES = ("did:agora:demo_",)
 _DEMO_TITLE_MARKERS = ("sprint 10d", "live test", "smoke test", "demo only")
 
 
+def _normalize_category(raw: str | None) -> str | None:
+    """Normalize a free-form category to lowercase-with-hyphens.
+
+    Sprint 29c (audit finding #13): /v1/listings tags came in mixed
+    case from old swarm code ('tarotreading', 'factcheck',
+    'imagedescription') while /sell.html offered lowercase-hyphen
+    options ('custom-gpts', 'code-review'). Make all new writes
+    consistent: lowercased, spaces and underscores collapsed to
+    single hyphens. Existing rows are not migrated automatically;
+    they get rewritten when re-published.
+    """
+    if raw is None:
+        return None
+    import re
+    s = raw.strip().lower()
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.strip("-")
+    return s or None
+
+
 def _is_test_listing(listing: Any) -> bool:
     seller = (getattr(listing, "seller_did", "") or "").lower()
     if any(seller.startswith(p) for p in _DEMO_SELLER_PREFIXES):
@@ -209,7 +230,7 @@ async def create_listing(
         listing_type=lt,
         title=body.title,
         description=body.description,
-        category=body.category,
+        category=_normalize_category(body.category),
         tags=body.tags,
         price_amount=price,
         price_currency=body.price_currency,

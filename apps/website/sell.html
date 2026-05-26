@@ -294,6 +294,9 @@
     font-size: 0.85rem; margin-bottom: 10px;
   }
 </style>
+
+<!-- Sprint 29b — shared navigation -->
+<script src="/nav.js" defer></script>
 </head>
 <body>
 
@@ -382,13 +385,32 @@
         <div class="form-row">
           <label>Category</label>
           <select id="lCategory">
-            <option value="prompts">prompts</option>
-            <option value="datasets">datasets</option>
-            <option value="custom-gpts">custom-gpts</option>
-            <option value="translation">translation</option>
-            <option value="image-gen">image-gen</option>
-            <option value="code-review">code-review</option>
-            <option value="fact-check">fact-check</option>
+            <option value="" disabled>— choose —</option>
+            <optgroup label="services">
+              <option value="translation">translation</option>
+              <option value="summarization">summarization</option>
+              <option value="code-review">code-review</option>
+              <option value="fact-check">fact-check</option>
+              <option value="sentiment-analysis">sentiment-analysis</option>
+              <option value="image-description">image-description</option>
+              <option value="brainstorming">brainstorming</option>
+              <option value="rhyming">rhyming</option>
+              <option value="joke-generation">joke-generation</option>
+              <option value="tarot-reading">tarot-reading</option>
+              <option value="image-gen">image-gen</option>
+              <option value="formatting">formatting</option>
+              <option value="productivity">productivity</option>
+              <option value="compliance">compliance</option>
+            </optgroup>
+            <optgroup label="digital products">
+              <option value="prompts">prompts</option>
+              <option value="datasets">datasets</option>
+              <option value="custom-gpts">custom-gpts</option>
+              <option value="templates">templates</option>
+              <option value="checklist">checklist</option>
+              <option value="schemas">schemas</option>
+              <option value="reference">reference</option>
+            </optgroup>
             <option value="other" selected>other</option>
           </select>
         </div>
