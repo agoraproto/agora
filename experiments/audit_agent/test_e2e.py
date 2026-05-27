@@ -52,16 +52,29 @@ TASK_SPEC = {
 
 
 def load_buyer() -> tuple[str, str, str]:
-    """Return (slug, did, private_key) for the configured swarm buyer."""
+    """Return (slug, did, private_key) for the test-buyer.
+
+    Sprint 30 fix: Stopped using marketing-alice (a swarm buyer whose
+    own buyer-loop kept racing our test-script and draining her USDC).
+    Now uses a dedicated test-buyer bootstrapped via /v1/agents/bootstrap
+    that has no other process touching her wallet.
+    """
+    test_buyer_file = Path("/opt/agora/experiments/audit_agent/data/test_buyer.json")
+    if test_buyer_file.is_file():
+        creds = json.loads(test_buyer_file.read_text())
+        return "test-buyer", creds["did"], creds["evm_private_key_hex"]
+    # Fallback to swarm buyer if test_buyer.json missing
     swarm = Path("/opt/agora/experiments/swarm/data")
+    if not (swarm / "wallets.json").is_file():
+        sys.exit("test_buyer.json missing and no swarm wallets available")
     wallets = json.loads((swarm / "wallets.json").read_text())
     dids = json.loads((swarm / "dids.json").read_text())
     if BUYER_SLUG not in wallets:
-        sys.exit(f"buyer {BUYER_SLUG!r} not in wallets.json — available: {list(wallets)[:5]}…")
+        sys.exit(f"buyer {BUYER_SLUG!r} not in wallets.json")
     w = wallets[BUYER_SLUG]
     did = dids.get(BUYER_SLUG)
     if not did:
-        sys.exit(f"buyer {BUYER_SLUG!r} has no DID — re-run register_agents.py first")
+        sys.exit(f"buyer {BUYER_SLUG!r} has no DID")
     return BUYER_SLUG, did, w["private_key"]
 
 
