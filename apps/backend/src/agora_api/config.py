@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     rate_limit_register: str = "10/minute"
     rate_limit_create_job: str = "30/minute"
     rate_limit_open_dispute: str = "5/minute"
+    # M-05 audit fix: opt-in trust for X-Forwarded-For. Set to true only
+    # when there is a verified reverse proxy (Caddy in our deployment)
+    # that ALWAYS overrides this header. Default is off so a misconfigured
+    # deploy doesn't accidentally let clients pick their own bucket.
+    trust_forwarded_for: bool = False
 
     # Fee model (ADR 004): 1.0% with min 0.50 EUR and max 25 EUR
     fee_bps: int = 100

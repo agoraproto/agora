@@ -40,13 +40,17 @@ log = logging.getLogger(__name__)
 
 
 # AgoraEscrow.JobStatus enum:
-#   0 None, 1 Funded, 2 Submitted, 3 Approved, 4 Disputed, 5 Refunded
+#   V1: 0 None, 1 Funded, 2 Submitted, 3 Approved, 4 Disputed, 5 Refunded
+#   V2 adds: 6 Resolved (via resolveDispute() — payee/payer split after dispute)
+# M-04 audit fix: watcher now knows the V2 status code so it doesn't log
+# Resolved jobs as "unknown".
 _CHAIN_TO_DB: dict[int, JobStatus] = {
     1: JobStatus.offered,
     2: JobStatus.submitted,
     3: JobStatus.completed,
     4: JobStatus.disputed,
     5: JobStatus.refunded,
+    6: JobStatus.resolved,  # V2 only
 }
 
 _EVENT_NAMES: dict[JobStatus, str] = {
@@ -54,6 +58,7 @@ _EVENT_NAMES: dict[JobStatus, str] = {
     JobStatus.completed: "job.completed",
     JobStatus.disputed: "job.disputed",
     JobStatus.refunded: "job.refunded",
+    JobStatus.resolved: "job.resolved",
 }
 
 # DB statuses we still actively monitor (terminal states are skipped).

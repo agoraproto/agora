@@ -129,14 +129,25 @@ def _payment_required_response(payment_required: dict[str, Any], hint: str) -> R
 def _find_event(receipt: Any, event_factory: Any) -> dict[str, Any] | None:
     """Scan a tx receipt for an event matching `event_factory()`.
 
+    H-04 audit fix: explicitly require the log to come from our configured
+    AgoraEscrow contract address. Without that, an ABI-compatible event
+    emitted by an unrelated contract in the same tx could be matched and
+    treated as a valid Agora event. We now reject any log whose `address`
+    isn't the configured escrow address.
+
     Returns the parsed log (with .args, .event, .blockNumber, …) or
     None if no log in this receipt matched. Used so each x402 step can
     re-verify the on-chain side-effect it expected.
     """
+    settings = get_settings()
+    escrow_addr = (settings.escrow_contract_address or "").lower()
     for log_entry in receipt["logs"]:
+        log_addr = (log_entry.get("address") or "").lower() if hasattr(log_entry, "get") else (log_entry["address"].lower() if log_entry.get("address") else "")
+        if escrow_addr and log_addr and log_addr != escrow_addr:
+            continue  # log from a different contract — skip
         try:
             return event_factory().process_log(log_entry)
-        except Exception:  # log belongs to a different contract/event
+        except Exception:  # log belongs to a different event (same contract)
             continue
     return None
 

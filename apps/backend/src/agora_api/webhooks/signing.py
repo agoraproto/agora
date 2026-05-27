@@ -66,15 +66,27 @@ def _load_or_generate_signer() -> AgoraSigner:
         except Exception as e:
             raise RuntimeError(f"invalid AGORA_SIGNING_PRIVATE_KEY_B64: {e}") from e
 
-    sk = SigningKey.generate()
+    # M-06 audit fix: refuse to start staging/production without a persistent
+    # signing key. The previous behaviour silently generated an ephemeral key
+    # on every restart, which would invalidate every outstanding webhook
+    # signature on the next process restart. That's fine for local dev, but
+    # for any real deployment we want the process to crash early and loudly.
     if settings.app_env != "local":
-        print(
-            f"[agora.signing] WARNING: AGORA_SIGNING_PRIVATE_KEY_B64 not set in "
-            f"env={settings.app_env}; generated ephemeral key. key_id={key_id} "
-            f"pubkey={base64.b64encode(sk.verify_key.encode()).decode('ascii')}",
-            file=sys.stderr,
-            flush=True,
+        raise RuntimeError(
+            f"AGORA_SIGNING_PRIVATE_KEY_B64 must be set in env={settings.app_env}. "
+            "Generate one with:  python -c 'import base64, nacl.signing; "
+            "print(base64.b64encode(nacl.signing.SigningKey.generate().encode()).decode())'  "
+            "and set it as a 32-byte-Ed25519-private-key (base64). "
+            "Refusing to start with an ephemeral key in non-local mode."
         )
+
+    sk = SigningKey.generate()
+    print(
+        f"[agora.signing] dev-mode ephemeral key generated. key_id={key_id} "
+        f"pubkey={base64.b64encode(sk.verify_key.encode()).decode('ascii')}",
+        file=sys.stderr,
+        flush=True,
+    )
     return AgoraSigner(signing_key=sk, key_id=key_id)
 
 

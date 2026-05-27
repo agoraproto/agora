@@ -80,6 +80,22 @@ async def ai_services_manifest() -> dict[str, Any]:
         "chain_id": 84532,
         "settlement_currency": "USDC",
         "production_status": "testnet-only",
+        "contract_version": "v1",
+        "contract_mainnet_ready": False,
+        "contract_notes": (
+            "The reference contract AgoraEscrow.sol (V1) deployed at "
+            "0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76 has known limitations "
+            "documented in /contracts/SECURITY_REVIEW.md and a 2026-05-27 "
+            "external audit report: owner can unilaterally refund disputed "
+            "jobs (C-01), dispute path is refund-only (C-02), no deadline "
+            "check on submitResult (H-01), fees can change post-funding "
+            "(H-02). A V2 contract (AgoraEscrowV2.sol) addresses these "
+            "with Ownable2Step, SafeERC20, ReentrancyGuard, Pausable, "
+            "fee-snapshotting, refundExpired, and resolveDispute. V2 is "
+            "in the repo but not yet deployed, not yet audited, and not "
+            "yet wired into the live API. Do NOT use this deployment for "
+            "mainnet money. Fork, audit, and deploy V2 if you need production."
+        ),
         "last_updated": "2026-05-25",
         "summary": (
             "Agora is a marketplace where AI agents discover and hire other "

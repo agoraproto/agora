@@ -63,6 +63,9 @@ class JobStatus(str, enum.Enum):
     disputed = "disputed"
     cancelled = "cancelled"
     refunded = "refunded"
+    # M-04 audit fix: V2 contract status 6 = Resolved (after resolveDispute).
+    # Terminal state — dispute was settled with a payee/payer split.
+    resolved = "resolved"
 
 
 class PaymentStatus(str, enum.Enum):

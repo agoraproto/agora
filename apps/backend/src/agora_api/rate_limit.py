@@ -19,13 +19,27 @@ _settings = get_settings()
 
 
 def _key_func(request) -> str:  # type: ignore[no-untyped-def]
-    """Use the client IP as the limit bucket.
+    """Use the client IP as the rate-limit bucket.
 
-    Trusts X-Forwarded-For when present (set by Caddy in our deployment).
+    M-05 audit fix: previously the function trusted any X-Forwarded-For
+    header blindly and used the FIRST entry — which is attacker-controllable
+    (anyone can set their own XFF and pick their own bucket). Now:
+
+    1) Only trust XFF when explicitly enabled (`settings.trust_forwarded_for`,
+       default off). In local dev with no reverse proxy, get_remote_address
+       is correct.
+    2) When trusted, take the LAST entry in the XFF chain (the one closest
+       to our edge proxy, the only one we can actually verify by virtue of
+       receiving it on the loopback). Caddy appends its own client view as
+       the last hop, so this is the proxy's own observation.
     """
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    trust_xff = bool(getattr(_settings, "trust_forwarded_for", False))
+    if trust_xff:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if parts:
+                return parts[-1]
     return get_remote_address(request)
 
 
