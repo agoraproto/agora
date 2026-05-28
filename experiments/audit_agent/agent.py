@@ -27,7 +27,7 @@ API = os.environ.get("AGORA_API", "https://api.agoraproto.org")
 RPC = os.environ.get("AGORA_RPC", "https://sepolia.base.org")
 POLL_INTERVAL = int(os.environ.get("AUDIT_POLL_INTERVAL", "20"))
 MODEL = os.environ.get("AGORA_AUDIT_MODEL", "claude-haiku-4-5-20251001")
-MAX_TOKENS = int(os.environ.get("AGORA_AUDIT_MAX_TOKENS", "4000"))
+MAX_TOKENS = int(os.environ.get("AGORA_AUDIT_MAX_TOKENS", "8000"))
 
 HERE = Path(__file__).parent
 CREDS_FILE = HERE / "data" / "credentials.json"
@@ -99,36 +99,76 @@ async def call_claude(system_prompt: str, task_spec: dict[str, Any]) -> str:
     return text.strip()
 
 
-def parse_json_envelope(raw: str) -> dict[str, Any]:
-    """Best-effort extraction of the JSON object from Claude's output.
+def _repair_truncated_json(s: str) -> str:
+    """Sprint 32g -- close unterminated strings + unbalanced braces."""
+    in_string = False
+    escape = False
+    stack: list[str] = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+        elif ch == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+    out = s
+    if in_string:
+        out += '"'
+    out = out.rstrip()
+    if out.endswith(","):
+        out = out[:-1]
+    if out.endswith(":"):
+        out += " null"
+    for ch in reversed(stack):
+        out += "}" if ch == "{" else "]"
+    return out
 
-    The system prompt asks for a bare JSON object, but Haiku sometimes
-    wraps it in ```json ... ``` or prepends a sentence. We strip the
-    common envelopes and fall back to a "first '{' to last '}'" slice.
+
+def parse_json_envelope(raw: str) -> dict[str, Any]:
+    """Sprint 32g -- 4-tier robust parser.
+
+    1. Strict json.loads
+    2. Slice first '{' to last '}' and parse
+    3. Repair truncated JSON (close strings + braces) and parse
+    4. Hard fallback: error envelope with raw text in markdown_report
     """
     txt = raw.strip()
-    # Strip ```json fences if present.
     if txt.startswith("```"):
-        # remove the opening fence
         first_nl = txt.find("\n")
         if first_nl != -1:
             txt = txt[first_nl + 1:]
-        # remove trailing ```
         if txt.rstrip().endswith("```"):
             txt = txt.rstrip()[:-3].rstrip()
     try:
         return json.loads(txt)
     except json.JSONDecodeError:
-        # Fall back: slice first { to last }
-        i, j = txt.find("{"), txt.rfind("}")
-        if i != -1 and j != -1 and j > i:
-            try:
-                return json.loads(txt[i:j + 1])
-            except json.JSONDecodeError:
-                pass
-    # Give the buyer SOMETHING useful even if the LLM mis-formatted.
+        pass
+    i, j = txt.find("{"), txt.rfind("}")
+    if i != -1 and j > i:
+        try:
+            return json.loads(txt[i:j + 1])
+        except json.JSONDecodeError:
+            pass
+    if i != -1:
+        try:
+            return json.loads(_repair_truncated_json(txt[i:]))
+        except json.JSONDecodeError:
+            pass
     return {
-        "markdown_report": "# Compliance Gap Report\n\n_LLM output was not valid JSON — raw text below._\n\n" + raw[:4000],
+        "markdown_report": "# Compliance Gap Report\n\n_LLM output was not valid JSON -- raw text below._\n\n" + raw[:4000],
         "summary": {
             "standard": "unknown",
             "document_excerpt": "",

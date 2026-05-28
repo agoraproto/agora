@@ -27,7 +27,7 @@ API = os.environ.get("AGORA_API", "https://api.agoraproto.org")
 RPC = os.environ.get("AGORA_RPC", "https://sepolia.base.org")
 POLL_INTERVAL = int(os.environ.get("BAU_POLL_INTERVAL", "20"))
 MODEL = os.environ.get("AGORA_BAU_MODEL", "claude-haiku-4-5-20251001")
-MAX_TOKENS = int(os.environ.get("AGORA_BAU_MAX_TOKENS", "4000"))
+MAX_TOKENS = int(os.environ.get("AGORA_BAU_MAX_TOKENS", "8000"))
 
 HERE = Path(__file__).parent
 CREDS_FILE = HERE / "data" / "credentials.json"
@@ -96,9 +96,46 @@ async def call_claude(system_prompt: str, task_spec: dict[str, Any]) -> str:
     return text.strip()
 
 
+def _repair_truncated_json(s: str) -> str:
+    """Sprint 32g -- close unterminated strings + unbalanced braces."""
+    in_string = False
+    escape = False
+    stack: list[str] = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+        elif ch == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+    out = s
+    if in_string:
+        out += '"'
+    out = out.rstrip()
+    if out.endswith(","):
+        out = out[:-1]
+    if out.endswith(":"):
+        out += " null"
+    for ch in reversed(stack):
+        out += "}" if ch == "{" else "]"
+    return out
+
+
 def parse_json_envelope(raw: str) -> dict[str, Any]:
-    """Same robust extractor as in audit_agent — Haiku occasionally wraps
-    JSON in markdown fences or prepends a sentence."""
+    """Sprint 32g -- same robust 4-tier parser as audit_agent."""
     txt = raw.strip()
     if txt.startswith("```"):
         first_nl = txt.find("\n")
@@ -109,14 +146,20 @@ def parse_json_envelope(raw: str) -> dict[str, Any]:
     try:
         return json.loads(txt)
     except json.JSONDecodeError:
-        i, j = txt.find("{"), txt.rfind("}")
-        if i != -1 and j != -1 and j > i:
-            try:
-                return json.loads(txt[i:j + 1])
-            except json.JSONDecodeError:
-                pass
+        pass
+    i, j = txt.find("{"), txt.rfind("}")
+    if i != -1 and j > i:
+        try:
+            return json.loads(txt[i:j + 1])
+        except json.JSONDecodeError:
+            pass
+    if i != -1:
+        try:
+            return json.loads(_repair_truncated_json(txt[i:]))
+        except json.JSONDecodeError:
+            pass
     return {
-        "markdown_report": "# Bau-/Sanierungs-Compliance Report\n\n_LLM output was not valid JSON — raw text below._\n\n" + raw[:4000],
+        "markdown_report": "# Bau-/Sanierungs-Compliance Report\n\n_LLM output was not valid JSON -- raw text below._\n\n" + raw[:4000],
         "summary": {
             "scenario_excerpt": "",
             "applicable_rules": [],
