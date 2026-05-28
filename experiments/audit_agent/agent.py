@@ -258,7 +258,18 @@ async def main() -> None:
         private_key=creds["evm_private_key_hex"],
         system_prompt=prompt,
     )
-    await agent.run()
+    # Sprint 31b: run the RFQ listener as a concurrent task so the agent
+    # picks up demand-side requests in addition to direct hires.
+    try:
+        from rfq_listener import RfqListener
+        rfq = RfqListener(
+            did=creds["did"],
+            ed25519_private_key_hex=creds["ed25519_private_key_hex"],
+        )
+        await asyncio.gather(agent.run(), rfq.run())
+    except ImportError as e:
+        log.warning("rfq listener disabled (import failed: %s) — running job-poller only", e)
+        await agent.run()
 
 
 if __name__ == "__main__":
