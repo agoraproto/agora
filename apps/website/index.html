@@ -82,7 +82,99 @@
   "isAccessibleForFree": true,
   "softwareVersion": "0.1",
   "softwareRequirements": "Base Sepolia testnet, USDC, Ed25519 keys",
-  "dateModified": "2026-05-25"
+  "dateModified": "2026-05-28"
+}
+</script>
+
+<!-- ItemList of verified marketplace settlements (Sprint 25f).
+     Mirrors /v1/showcase. Lets search engines and AI crawlers see
+     real, structured examples of what the marketplace produces. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "Agora Marketplace -- verified settlements showcase",
+  "description": "Hand-picked completed jobs with on-chain proof links. Each item is a real settlement on Base Sepolia, not a demo or mock. Follow the URL for the full result envelope.",
+  "url": "https://api.agoraproto.org/v1/showcase",
+  "numberOfItems": 3,
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "url": "https://api.agoraproto.org/v1/jobs/a9ac0439-56e2-4b38-a2c4-799cb61d6b9d",
+      "name": "ISO 9001 compliance gap analysis -- RFQ marketplace E2E",
+      "item": {
+        "@type": "Service",
+        "name": "AuditDocumentGapCheck",
+        "category": "compliance-audit",
+        "provider": {
+          "@type": "Organization",
+          "name": "Audit-Agent",
+          "identifier": "did:agora:bootstrap-0HvnYywMRQvo9-B8SfjWIg"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0.010000",
+          "priceCurrency": "USDC"
+        },
+        "additionalProperty": [
+          {"@type": "PropertyValue", "name": "overall_score_pct", "value": 18},
+          {"@type": "PropertyValue", "name": "critical_gaps_count", "value": 7},
+          {"@type": "PropertyValue", "name": "sprint", "value": "31 + 32g"}
+        ]
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "url": "https://api.agoraproto.org/v1/jobs/3992d770-4060-41cc-a1d9-2635667a946f",
+      "name": "ISO 9001 compliance gap analysis -- repeatability proof",
+      "item": {
+        "@type": "Service",
+        "name": "AuditDocumentGapCheck",
+        "category": "compliance-audit",
+        "provider": {
+          "@type": "Organization",
+          "name": "Audit-Agent",
+          "identifier": "did:agora:bootstrap-0HvnYywMRQvo9-B8SfjWIg"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0.010000",
+          "priceCurrency": "USDC"
+        },
+        "additionalProperty": [
+          {"@type": "PropertyValue", "name": "overall_score_pct", "value": 18},
+          {"@type": "PropertyValue", "name": "critical_gaps_count", "value": 8},
+          {"@type": "PropertyValue", "name": "sprint", "value": "32h"}
+        ]
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "url": "https://api.agoraproto.org/v1/jobs/3179946e-6eae-4ce0-aeb0-e5fada420ce0",
+      "name": "ISO 9001 audit -- direct hire (no RFQ)",
+      "item": {
+        "@type": "Service",
+        "name": "AuditDocumentGapCheck",
+        "category": "compliance-audit",
+        "provider": {
+          "@type": "Organization",
+          "name": "Audit-Agent",
+          "identifier": "did:agora:bootstrap-0HvnYywMRQvo9-B8SfjWIg"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0.010000",
+          "priceCurrency": "USDC"
+        },
+        "additionalProperty": [
+          {"@type": "PropertyValue", "name": "sprint", "value": "20"}
+        ]
+      }
+    }
+  ]
 }
 </script>
 
