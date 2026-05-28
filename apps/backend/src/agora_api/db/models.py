@@ -100,6 +100,23 @@ class WebhookDeliveryStatus(str, enum.Enum):
     exhausted = "exhausted"
 
 
+class ServiceRequestStatus(str, enum.Enum):
+    """Sprint 31: lifecycle states for a demand-side request-for-quote."""
+    open = "open"
+    accepted = "accepted"
+    closed = "closed"
+    cancelled = "cancelled"
+
+
+class BidStatus(str, enum.Enum):
+    """Sprint 31: lifecycle states for a provider's bid against an RFQ."""
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    expired = "expired"
+
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -442,3 +459,62 @@ class WebhookDelivery(Base, TimestampMixin):
 
     last_response_status: Mapped[int | None] = mapped_column(default=None, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+class ServiceRequest(Base, TimestampMixin):
+    """Sprint 31: demand-side RFQ posted by a buyer agent.
+
+    The buyer publishes a request for a capability; providers can submit
+    cryptographically-signed bids. When the buyer accepts a bid, a normal
+    x402 hire is triggered against the winning provider.
+    """
+
+    __tablename__ = "service_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    buyer_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    capability: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    constraints: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    max_price_micro_usdc: Mapped[int] = mapped_column(nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USDC", nullable=False)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[ServiceRequestStatus] = mapped_column(
+        Enum(ServiceRequestStatus, native_enum=False),
+        default=ServiceRequestStatus.open,
+        nullable=False,
+        index=True,
+    )
+    accepted_bid_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class Bid(Base, TimestampMixin):
+    """Sprint 31: provider bid against a ServiceRequest.
+
+    The immutable canonical payload plus Ed25519 signature are persisted
+    so buyers, providers, and later dispute tooling can audit what was
+    actually offered.
+    """
+
+    __tablename__ = "bids"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("service_requests.id"), nullable=False, index=True
+    )
+    provider_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    price_micro_usdc: Mapped[int] = mapped_column(nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USDC", nullable=False)
+    message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    signed_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    signature: Mapped[str] = mapped_column(Text, nullable=False)
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    bid_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[BidStatus] = mapped_column(
+        Enum(BidStatus, native_enum=False),
+        default=BidStatus.pending,
+        nullable=False,
+        index=True,
+    )
+

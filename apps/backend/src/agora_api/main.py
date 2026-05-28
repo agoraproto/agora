@@ -22,6 +22,7 @@ from .routes import (
     listings,
     payments,
     reviews,
+    rfq,
     search,
     stats,
     well_known,
@@ -109,6 +110,7 @@ app.include_router(listings.router, prefix="/v1/listings", tags=["marketplace"])
 app.include_router(x402.router, prefix="/v1/x402", tags=["x402"])
 app.include_router(payments.router, prefix="/v1/payments", tags=["payments"])
 app.include_router(reviews.router, prefix="/v1", tags=["reputation"])
+app.include_router(rfq.router, prefix="/v1/requests", tags=["rfq"])
 app.include_router(stats.router, prefix="/v1", tags=["stats"])
 app.include_router(well_known.router, tags=["well-known"])
 
