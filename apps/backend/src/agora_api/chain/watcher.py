@@ -35,6 +35,7 @@ from ..db.base import get_sessionmaker
 from ..db.models import Job, JobStatus
 from ..webhooks.delivery import enqueue_for_agent
 from . import get_escrow_client
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +152,8 @@ async def _reconcile_one(
         target.value,
     )
     job.status = target
+    if target == JobStatus.completed and job.completed_at is None:
+        job.completed_at = datetime.now(UTC)
     await session.flush()
 
     # Tell whichever agent is waiting for this state change.

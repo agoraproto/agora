@@ -20,6 +20,7 @@ from ..db.models import Agent, Job, JobStatus
 from ..pricing import compute_fee
 from ..rate_limit import limiter
 from ..webhooks.delivery import enqueue_for_agent
+from datetime import UTC, datetime
 
 router = APIRouter()
 
@@ -353,6 +354,8 @@ async def open_dispute(
                 job_id=job.id,
             )
             job.status = JobStatus.completed
+            if job.completed_at is None:
+                job.completed_at = datetime.now(UTC)
             await reviews_repo.increment_jobs_completed(session, r)
             await reviews_repo.increment_jobs_completed(session, p)
         await session.flush()

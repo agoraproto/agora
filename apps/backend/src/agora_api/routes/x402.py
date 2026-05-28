@@ -48,6 +48,7 @@ from ..chain import get_escrow_client
 from ..config import get_settings
 from ..db import agents_repo, disputes_repo, jobs_repo, listings_repo, reviews_repo
 from ..db.base import get_session
+from datetime import UTC, datetime
 from ..db.models import Job, JobStatus
 from ..rate_limit import limiter
 from ..webhooks.delivery import enqueue_for_agent
@@ -610,6 +611,8 @@ async def approve_x402_job(
     # Mirror state into DB.
     job.release_tx_hash = x_payment_tx
     job.status = JobStatus.completed
+    if job.completed_at is None:
+        job.completed_at = datetime.now(UTC)
     await session.flush()
 
     # Bump reputation counters for both sides (same as off-chain approve).
