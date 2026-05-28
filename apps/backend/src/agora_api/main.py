@@ -24,6 +24,7 @@ from .routes import (
     reviews,
     rfq,
     search,
+    state,
     stats,
     well_known,
     x402,
@@ -107,11 +108,13 @@ app.include_router(bootstrap.router, prefix="/v1/agents/bootstrap", tags=["agent
 app.include_router(search.router, prefix="/v1", tags=["discovery"])
 app.include_router(jobs.router, prefix="/v1/jobs", tags=["jobs"])
 app.include_router(listings.router, prefix="/v1/listings", tags=["marketplace"])
+app.include_router(rfq.router, prefix="/v1/requests", tags=["rfq"])
 app.include_router(x402.router, prefix="/v1/x402", tags=["x402"])
 app.include_router(payments.router, prefix="/v1/payments", tags=["payments"])
 app.include_router(reviews.router, prefix="/v1", tags=["reputation"])
-app.include_router(rfq.router, prefix="/v1/requests", tags=["rfq"])
 app.include_router(stats.router, prefix="/v1", tags=["stats"])
+# Sprint 25b — /v1/state + /v1/showcase. Promised by /.well-known/ai-services.json.
+app.include_router(state.router, prefix="/v1", tags=["discovery"])
 app.include_router(well_known.router, tags=["well-known"])
 
 
