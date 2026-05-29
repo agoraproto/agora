@@ -188,6 +188,110 @@ _ERC20_ABI: list[dict[str, Any]] = [
 ]
 
 
+# Sprint 35a: ABI superset for AgoraEscrowV2 (contracts/src/AgoraEscrowV2.sol).
+#
+# V2 is committed but not yet deployed; this constant lets us point the
+# AgoraEscrowClient at a V2 contract address (via a future config switch)
+# without an emergency hotfix. Key differences vs _ESCROW_ABI above:
+#
+#   - splits v1 `refund()` into permissionless `refundExpired()` and
+#     owner-only `resolveDispute(jobId, payeeAmount, payerAmount)`
+#   - adds `previewFee(amount)` (replaces v1's `computeFee` for callers
+#     who want current-parameter quoting; v2 also exposes the snapshot
+#     fee in the Job struct)
+#   - new event `JobResolved` with (payeeAmount, payerAmount, fee,
+#     insuranceCut) tuple
+#   - `JobDisputed` adds an indexed `raisedBy` topic
+#   - `JobRefunded` adds (to, amount) data
+#   - jobs(jobId) view returns the snapshot fee params in addition to the
+#     v1 fields
+#
+# To use: set `settings.escrow_abi_version = "v2"` (planned config), then
+# AgoraEscrowClient picks _ESCROW_V2_ABI in its constructor. Until V2 is
+# deployed, this constant is unused but committed so the migration is a
+# pure config flip, not a code change.
+_ESCROW_V2_ABI: list[dict[str, Any]] = [
+    {"type": "function", "name": "createJob", "stateMutability": "nonpayable",
+     "inputs": [{"name": "payee", "type": "address"}, {"name": "amount", "type": "uint256"},
+                {"name": "taskHash", "type": "bytes32"}, {"name": "deadline", "type": "uint64"}],
+     "outputs": [{"name": "jobId", "type": "uint256"}]},
+    {"type": "function", "name": "submitResult", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"}, {"name": "resultHash", "type": "bytes32"}],
+     "outputs": []},
+    {"type": "function", "name": "approveAndPay", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"}], "outputs": []},
+    {"type": "function", "name": "dispute", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"}, {"name": "reason", "type": "string"}],
+     "outputs": []},
+    {"type": "function", "name": "refundExpired", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"}], "outputs": []},
+    {"type": "function", "name": "resolveDispute", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"},
+                {"name": "payeeAmount", "type": "uint256"},
+                {"name": "payerAmount", "type": "uint256"}],
+     "outputs": []},
+    {"type": "function", "name": "previewFee", "stateMutability": "view",
+     "inputs": [{"name": "amount", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
+    {"type": "function", "name": "jobs", "stateMutability": "view",
+     "inputs": [{"name": "", "type": "uint256"}],
+     "outputs": [
+         {"name": "payer", "type": "address"},
+         {"name": "payee", "type": "address"},
+         {"name": "amount", "type": "uint256"},
+         {"name": "taskHash", "type": "bytes32"},
+         {"name": "resultHash", "type": "bytes32"},
+         {"name": "deadline", "type": "uint64"},
+         {"name": "status", "type": "uint8"},
+         {"name": "snapshotFeeBps", "type": "uint16"},
+         {"name": "snapshotMinFee", "type": "uint256"},
+         {"name": "snapshotMaxFee", "type": "uint256"},
+         {"name": "snapshotInsuranceShareBps", "type": "uint16"},
+     ]},
+    {"type": "event", "name": "JobCreated", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "payer", "type": "address", "indexed": True},
+         {"name": "payee", "type": "address", "indexed": True},
+         {"name": "amount", "type": "uint256", "indexed": False},
+         {"name": "taskHash", "type": "bytes32", "indexed": False},
+         {"name": "deadline", "type": "uint64", "indexed": False},
+     ]},
+    {"type": "event", "name": "JobApproved", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "fee", "type": "uint256", "indexed": False},
+         {"name": "insuranceCut", "type": "uint256", "indexed": False},
+     ]},
+    {"type": "event", "name": "ResultSubmitted", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "resultHash", "type": "bytes32", "indexed": False},
+     ]},
+    {"type": "event", "name": "JobDisputed", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "raisedBy", "type": "address", "indexed": True},
+         {"name": "reason", "type": "string", "indexed": False},
+     ]},
+    {"type": "event", "name": "JobRefunded", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "to", "type": "address", "indexed": True},
+         {"name": "amount", "type": "uint256", "indexed": False},
+     ]},
+    {"type": "event", "name": "JobResolved", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "payeeAmount", "type": "uint256", "indexed": False},
+         {"name": "payerAmount", "type": "uint256", "indexed": False},
+         {"name": "fee", "type": "uint256", "indexed": False},
+         {"name": "insuranceCut", "type": "uint256", "indexed": False},
+     ]},
+]
+
+
+
 @dataclass(frozen=True)
 class OnchainJob:
     """Read-back of AgoraEscrow.jobs(jobId)."""
