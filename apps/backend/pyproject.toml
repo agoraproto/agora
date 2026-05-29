@@ -23,7 +23,6 @@ dependencies = [
     "web3>=7.0.0",
     "eth-account>=0.13.0",
     "PyJWT[crypto]>=2.9.0",
-
 ]
 
 [project.optional-dependencies]
@@ -62,4 +61,4 @@ ignore = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-env = ["RATE_L
+env = ["RATE_LIMIT_ENABLED=false"]
