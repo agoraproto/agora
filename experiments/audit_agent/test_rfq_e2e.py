@@ -1,37 +1,40 @@
 """Sprint 31b — End-to-End demo of the demand-side marketplace.
 
+Sprint 34a: buyer now signs the create_request and accept_bid payloads.
+
 Buyer flow:
-  1. POST /v1/requests          — buyer posts an RFQ for AuditDocumentGapCheck
+  1. POST /v1/requests          — buyer posts a SIGNED RFQ for AuditDocumentGapCheck
   2. Wait for Audit-Agent to     — RfqListener polls every 15 s, signs + posts
      submit a signed bid           a bid via POST /v1/requests/{id}/bids
-  3. POST .../bids/{bid_id}/    — buyer accepts the bid
+  3. POST .../bids/{bid_id}/    — buyer SIGNS the acceptance and posts it
      accept
   4. hire_with_x402 →            — standard x402 hire on the bid's provider_did
-     submit_result_with_x402 →     (same as test_e2e.py, but with the task spec
-     approve_with_x402            agreed in the RFQ)
-  5. Fetch result envelope       — verify the compliance gap report
-
-Run on the server:
-  /opt/agora/apps/backend/.venv/bin/python3 \\
-    /opt/agora/experiments/audit_agent/test_rfq_e2e.py
+     submit_result_with_x402 →
+     approve_with_x402
+  5. Fetch result envelope
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
+import secrets
 import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
+from nacl.signing import SigningKey
 
 API = "https://api.agoraproto.org"
 RPC = "https://sepolia.base.org"
 BUDGET_USDC = "0.01"
-BID_WAIT_TIMEOUT_S = 90      # how long to wait for the Audit-Agent to bid
-JOB_WAIT_TIMEOUT_S = 180     # how long for the provider to submitResult
+BID_WAIT_TIMEOUT_S = 90
+JOB_WAIT_TIMEOUT_S = 180
 
 TEST_BUYER_FILE = Path("/opt/agora/experiments/audit_agent/data/test_buyer.json")
 TASK_SPEC = {
@@ -55,16 +58,69 @@ def load_test_buyer() -> dict:
     return json.loads(TEST_BUYER_FILE.read_text())
 
 
-async def post_rfq(http: httpx.AsyncClient, buyer_did: str) -> str:
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 34a signing helpers
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _canonical_json(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _constraints_hash(constraints: dict[str, Any]) -> str:
+    return hashlib.sha256(_canonical_json(constraints)).hexdigest()
+
+
+def _sign(signing_key: SigningKey, payload: dict[str, Any]) -> str:
+    sig = signing_key.sign(_canonical_json(payload)).signature
+    return base64.b64encode(sig).decode("ascii")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# RFQ flow
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def post_rfq(http: httpx.AsyncClient, creds: dict) -> str:
+    buyer_did = creds["did"]
+    signing_key = SigningKey(bytes.fromhex(creds["ed25519_private_key_hex"]))
+
+    title = "ISO 9001 compliance gap — aerospace CNC supplier"
+    description = "Need a structured gap report for our QMS scenario."
+    capability = "AuditDocumentGapCheck"
+    constraints = {"task_spec": TASK_SPEC}
+    max_price = 10_000
+    currency = "USDC"
+    deadline = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    nonce = secrets.token_hex(16)
+
+    signed_payload = {
+        "intent": "create_request",
+        "buyer_did": buyer_did,
+        "title": title,
+        "description": description,
+        "capability": capability,
+        "constraints_hash": _constraints_hash(constraints),
+        "max_price_micro_usdc": max_price,
+        "currency": currency,
+        "deadline": deadline,
+        "nonce": nonce,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    signature = _sign(signing_key, signed_payload)
+
     body = {
         "buyer_did": buyer_did,
-        "title": "ISO 9001 compliance gap — aerospace CNC supplier",
-        "description": "Need a structured gap report for our QMS scenario.",
-        "capability": "AuditDocumentGapCheck",
-        "constraints": {"task_spec": TASK_SPEC},
-        "max_price_micro_usdc": 10_000,
-        "currency": "USDC",
-        "deadline": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+        "title": title,
+        "description": description,
+        "capability": capability,
+        "constraints": constraints,
+        "max_price_micro_usdc": max_price,
+        "currency": currency,
+        "deadline": deadline,
+        "signed_payload": signed_payload,
+        "signature": signature,
+        "nonce": nonce,
     }
     r = await http.post(f"{API}/v1/requests", json=body)
     if r.status_code != 201:
@@ -89,8 +145,6 @@ async def wait_for_bid(http: httpx.AsyncClient, rfq_id: str, capability_provider
                 print(f"  · bids so far: {len(bids)}")
                 last_count = len(bids)
             if bids:
-                # If a specific provider DID is preferred, pick that one;
-                # otherwise pick the lowest price bid.
                 if capability_provider_hint:
                     matching = [b for b in bids if b.get("provider_did") == capability_provider_hint]
                     if matching:
@@ -101,8 +155,29 @@ async def wait_for_bid(http: httpx.AsyncClient, rfq_id: str, capability_provider
     sys.exit(f"no bid received within {BID_WAIT_TIMEOUT_S}s")
 
 
-async def accept_bid(http: httpx.AsyncClient, rfq_id: str, bid: dict, buyer_did: str) -> None:
-    body = {"buyer_did": buyer_did, "bid_hash": bid["bid_hash"]}
+async def accept_bid(http: httpx.AsyncClient, rfq_id: str, bid: dict, creds: dict) -> None:
+    buyer_did = creds["did"]
+    signing_key = SigningKey(bytes.fromhex(creds["ed25519_private_key_hex"]))
+    nonce = secrets.token_hex(16)
+
+    signed_payload = {
+        "intent": "accept_bid",
+        "buyer_did": buyer_did,
+        "request_id": rfq_id,
+        "bid_id": bid["id"],
+        "bid_hash": bid["bid_hash"],
+        "nonce": nonce,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    signature = _sign(signing_key, signed_payload)
+
+    body = {
+        "buyer_did": buyer_did,
+        "bid_hash": bid["bid_hash"],
+        "signed_payload": signed_payload,
+        "signature": signature,
+        "nonce": nonce,
+    }
     r = await http.post(f"{API}/v1/requests/{rfq_id}/bids/{bid['id']}/accept", json=body)
     if r.status_code not in (200, 201):
         sys.exit(f"accept failed: {r.status_code} {r.text[:400]}")
@@ -156,28 +231,22 @@ async def main() -> None:
     print(f"=== Capability requested: AuditDocumentGapCheck ===\n")
 
     async with httpx.AsyncClient(timeout=30) as http:
-        # 1) Post RFQ
-        print("[1/6] Posting RFQ on /v1/requests")
-        rfq_id = await post_rfq(http, buyer_did)
+        print("[1/6] Posting SIGNED RFQ on /v1/requests")
+        rfq_id = await post_rfq(http, creds)
 
-        # 2) Wait for Audit-Agent's bid (rfq_listener polls every 15s)
         print(f"\n[2/6] Waiting for a bid (timeout {BID_WAIT_TIMEOUT_S}s)")
         bid = await wait_for_bid(http, rfq_id)
 
-        # 3) Accept the bid
-        print("\n[3/6] Accepting the bid")
-        await accept_bid(http, rfq_id, bid, buyer_did)
+        print("\n[3/6] Accepting the bid (signed)")
+        await accept_bid(http, rfq_id, bid, creds)
 
-    # 4) Standard x402 hire on the winning provider
     print("\n[4/6] x402 hire on the winning provider")
     job_id = await hire_provider(creds, bid["provider_did"], TASK_SPEC)
 
-    # 5) Wait for submitted
     print(f"\n[5/6] Waiting for provider to submit result (timeout {JOB_WAIT_TIMEOUT_S}s)")
     async with httpx.AsyncClient(timeout=30) as http:
         job = await poll_job(http, job_id, "submitted")
 
-        # 6) approveAndPay (may race with the provider's own approve; tolerate)
         print("\n[6/6] approveAndPay")
         from agora_sdk.x402 import approve_with_x402
         try:
@@ -189,7 +258,6 @@ async def main() -> None:
             else:
                 raise
 
-        # Fetch result envelope
         r = await http.get(f"{API}/v1/jobs/{job_id}")
         result = r.json().get("result") or {}
         summary = result.get("summary", {})
