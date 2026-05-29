@@ -315,4 +315,6 @@ contract AgoraEscrowV2Test is Test {
         uint256 jobId = _fund(USDC_100, uint64(block.timestamp + 1 days));
         vm.prank(payee);
         vm.expectRevert(AgoraEscrowV2.InvalidResultHash.selector);
-        escrow.submitResult(jobId, byte
+        escrow.submitResult(jobId, bytes32(0));
+    }
+}
