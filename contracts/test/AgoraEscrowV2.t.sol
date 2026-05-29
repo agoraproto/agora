@@ -32,7 +32,7 @@ contract MockERC20 {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) external virtual returns (bool) {
         require(balanceOf[from] >= amount, "bal");
         require(allowance[from][msg.sender] >= amount, "allow");
         allowance[from][msg.sender] -= amount;
@@ -45,7 +45,7 @@ contract MockERC20 {
 /// A token that silently keeps 1% on every transfer — used to verify
 /// that V2's `balanceOf` delta check (H-05 fix) actually rejects this.
 contract FeeOnTransferToken is MockERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) external override returns (bool) {
         require(balanceOf[from] >= amount, "bal");
         require(allowance[from][msg.sender] >= amount, "allow");
         allowance[from][msg.sender] -= amount;
@@ -315,6 +315,4 @@ contract AgoraEscrowV2Test is Test {
         uint256 jobId = _fund(USDC_100, uint64(block.timestamp + 1 days));
         vm.prank(payee);
         vm.expectRevert(AgoraEscrowV2.InvalidResultHash.selector);
-        escrow.submitResult(jobId, bytes32(0));
-    }
-}
+        escrow.submitResult(jobId, byte
