@@ -360,6 +360,14 @@ async def create_bid(
     if req.status != ServiceRequestStatus.open:
         raise HTTPException(status_code=409, detail=f"request is {req.status.value}")
     _require_usdc(body.currency)
+    # Sprint 34b: reject bids that are already expired at submit time.
+    # A small grace period (10s) prevents flaky rejections caused by
+    # clock skew between provider and server.
+    if body.expires_at <= datetime.now(UTC) - timedelta(seconds=10):
+        raise HTTPException(
+            status_code=400,
+            detail="bid expires_at must be in the future",
+        )
     if body.price_micro_usdc > req.max_price_micro_usdc:
         raise HTTPException(status_code=400, detail="bid exceeds request max_price_micro_usdc")
     provider = await _load_agent_or_404(session, body.provider_did)
@@ -427,6 +435,13 @@ async def accept_bid(
     bid = await rfq_repo.get_bid(session, bid_uuid)
     if bid is None or bid.request_id != rid:
         raise HTTPException(status_code=404, detail=f"bid {bid_id} not found for request")
+    # Sprint 34b: reject expired bids. 410 Gone is semantically correct -
+    # the bid was once accept-eligible but no longer is.
+    if bid.expires_at <= datetime.now(UTC):
+        raise HTTPException(
+            status_code=410,
+            detail=f"bid expired at {bid.expires_at.isoformat()}",
+        )
     if body.bid_hash is not None and body.bid_hash != bid.bid_hash:
         raise HTTPException(status_code=400, detail="bid_hash does not match accepted bid")
     # Sprint 34a: buyer must sign the canonical acceptance payload.
