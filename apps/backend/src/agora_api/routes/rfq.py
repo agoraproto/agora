@@ -437,10 +437,16 @@ async def accept_bid(
         raise HTTPException(status_code=404, detail=f"bid {bid_id} not found for request")
     # Sprint 34b: reject expired bids. 410 Gone is semantically correct -
     # the bid was once accept-eligible but no longer is.
-    if bid.expires_at <= datetime.now(UTC):
+    # Sprint 34f: bid.expires_at may come back tz-naive from SQLAlchemy if
+    # the underlying column is plain DateTime (e.g. SQLite test DB). Coerce
+    # to UTC-aware before comparing to datetime.now(UTC).
+    bid_expires = bid.expires_at
+    if bid_expires.tzinfo is None:
+        bid_expires = bid_expires.replace(tzinfo=UTC)
+    if bid_expires <= datetime.now(UTC):
         raise HTTPException(
             status_code=410,
-            detail=f"bid expired at {bid.expires_at.isoformat()}",
+            detail=f"bid expired at {bid_expires.isoformat()}",
         )
     if body.bid_hash is not None and body.bid_hash != bid.bid_hash:
         raise HTTPException(status_code=400, detail="bid_hash does not match accepted bid")
