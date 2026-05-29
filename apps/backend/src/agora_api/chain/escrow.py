@@ -106,6 +106,13 @@ _ESCROW_ABI: list[dict[str, Any]] = [
         "outputs": [{"name": "", "type": "uint256"}],
     },
     {
+        "type": "function",
+        "name": "previewFee",
+        "stateMutability": "view",
+        "inputs": [{"name": "amount", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+    },
+    {
         "type": "event",
         "name": "JobCreated",
         "inputs": [
@@ -354,8 +361,27 @@ class AgoraEscrowClient:
         return await asyncio.to_thread(_read)
 
     async def compute_fee(self, amount: int) -> int:
+        """Sprint 35i — V1/V2-agnostic fee preview.
+
+        V1 exposed `computeFee(uint256)`; V2 renamed it to `previewFee` and
+        added per-job snapshot fee params (see contracts/src/AgoraEscrowV2.sol).
+        Both functions have identical (amount -> fee) semantics for the
+        current parameters, so we try V2 first, fall back to V1.
+
+        If the contract reverts both, we fall back to a synthesised value
+        of 0 — better than crashing the entire x402 hire flow when the
+        backend was misconfigured. The actual fee is enforced by the
+        contract itself at settlement time.
+        """
         def _read() -> int:
-            return int(self.escrow.functions.computeFee(amount).call())
+            try:
+                return int(self.escrow.functions.previewFee(amount).call())
+            except Exception:
+                try:
+                    return int(self.escrow.functions.computeFee(amount).call())
+                except Exception:
+                    log.warning("compute_fee: both previewFee and computeFee reverted; returning 0")
+                    return 0
 
         return await asyncio.to_thread(_read)
 
