@@ -535,7 +535,7 @@ async def test_accept_bid_rejects_replayed_nonce_across_requests(
     # First request → bid → accept (legitimately) with nonce X.
     r = await client.post(
         "/v1/requests",
-        json=_create_request_signed(buyer_did, buyer_key, title="A"),
+        json=_create_request_signed(buyer_did, buyer_key, title="Request A"),
     )
     assert r.status_code == 201, r.text
     req_a = r.json()
@@ -560,7 +560,7 @@ async def test_accept_bid_rejects_replayed_nonce_across_requests(
     # Second request → bid → try accept with SAME nonce X by same buyer.
     r = await client.post(
         "/v1/requests",
-        json=_create_request_signed(buyer_did, buyer_key, title="B"),
+        json=_create_request_signed(buyer_did, buyer_key, title="Request B"),
     )
     assert r.status_code == 201, r.text
     req_b = r.json()
