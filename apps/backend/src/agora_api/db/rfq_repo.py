@@ -150,11 +150,31 @@ async def accept_bid(
     *,
     request: ServiceRequest,
     bid: Bid,
-) -> None:
+) -> list[Bid]:
+    """Accept a bid AND reject all other pending bids on the same request.
+
+    Returns the list of bids that were transitioned to rejected, so the
+    caller can fire bid.rejected webhooks to the losing providers
+    (Sprint 36e: lifecycle closure).
+    """
     request.status = ServiceRequestStatus.accepted
     request.accepted_bid_id = bid.id
     bid.status = BidStatus.accepted
+
+    # Sprint 36e: all other pending bids on this request are now losers.
+    result = await session.execute(
+        select(Bid).where(
+            Bid.request_id == request.id,
+            Bid.id != bid.id,
+            Bid.status == BidStatus.pending,
+        )
+    )
+    losing_bids = list(result.scalars().all())
+    for lb in losing_bids:
+        lb.status = BidStatus.rejected
+
     await session.flush()
+    return losing_bids
 
 
 def request_to_public_dict(row: ServiceRequest, *, bid_count: int = 0) -> dict[str, Any]:

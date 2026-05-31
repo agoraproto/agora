@@ -581,3 +581,73 @@ async def test_accept_bid_rejects_replayed_nonce_across_requests(
     )
     assert r.status_code == 409
     assert "rfq.accept" in r.json().get("detail", "")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 36e — losing-bid lifecycle closure
+# ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_accept_bid_marks_other_pending_bids_rejected(
+    client: AsyncClient,
+) -> None:
+    """Accepting one bid must transition every other pending bid on the
+    same request to 'rejected', so dashboards and providers don't see
+    stale 'pending' state forever."""
+    buyer_key = SigningKey.generate()
+    prov_a_key = SigningKey.generate()
+    prov_b_key = SigningKey.generate()
+    prov_c_key = SigningKey.generate()
+    buyer_did = "did:agora:buyer_lifecycle"
+    prov_a_did = "did:agora:provider_lc_a"
+    prov_b_did = "did:agora:provider_lc_b"
+    prov_c_did = "did:agora:provider_lc_c"
+    await _register_agent(client, buyer_did, buyer_key)
+    await _register_agent(client, prov_a_did, prov_a_key)
+    await _register_agent(client, prov_b_did, prov_b_key)
+    await _register_agent(client, prov_c_did, prov_c_key)
+
+    r = await client.post(
+        "/v1/requests",
+        json=_create_request_signed(buyer_did, buyer_key, title="Lifecycle test"),
+    )
+    assert r.status_code == 201, r.text
+    req = r.json()
+    rid = req["id"]
+
+    bids = []
+    for did, key in [(prov_a_did, prov_a_key), (prov_b_did, prov_b_key), (prov_c_did, prov_c_key)]:
+        r = await client.post(
+            f"/v1/requests/{rid}/bids",
+            json=_bid_signed(did, key, request_id=rid),
+        )
+        assert r.status_code == 201, r.text
+        bids.append(r.json())
+
+    # All three start pending.
+    assert all(b["status"] == "pending" for b in bids)
+
+    # Accept the middle one (B).
+    winner = bids[1]
+    accept = _accept_bid_signed(
+        buyer_did, buyer_key,
+        request_id=rid, bid_id=winner["id"], bid_hash=winner["bid_hash"],
+    )
+    r = await client.post(
+        f"/v1/requests/{rid}/bids/{winner['id']}/accept",
+        json=accept,
+    )
+    assert r.status_code == 200, r.text
+
+    # Re-fetch each bid; the winner must be 'accepted', the other two 'rejected'.
+    r = await client.get(f"/v1/requests/{rid}")
+    assert r.status_code == 200, r.text
+    by_id = {b["id"]: b for b in r.json()["bids"]}
+    assert by_id[winner["id"]]["status"] == "accepted"
+    for b in bids:
+        if b["id"] == winner["id"]:
+            continue
+        assert by_id[b["id"]]["status"] == "rejected", (
+            f"losing bid {b['id']} should be rejected, got {by_id[b['id']]['status']}"
+        )

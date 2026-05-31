@@ -477,7 +477,7 @@ async def accept_bid(
         raise HTTPException(
             status_code=409, detail="nonce already used by this actor for intent=rfq.accept"
         )
-    await rfq_repo.accept_bid(session, request=req, bid=bid)
+    losing_bids = await rfq_repo.accept_bid(session, request=req, bid=bid)
     provider = await agents_repo.get_by_did(session, bid.provider_did)
     if provider is not None:
         await enqueue_for_agent(
@@ -486,6 +486,24 @@ async def accept_bid(
             job_id=None,
             event_type="bid.accepted",
             payload={"request_id": str(req.id), "bid_id": str(bid.id), "bid_hash": bid.bid_hash},
+        )
+    # Sprint 36e: notify each losing provider so their state-machine can
+    # cancel any held resources (signed bids, prepared deliverables, etc.).
+    for losing in losing_bids:
+        loser_agent = await agents_repo.get_by_did(session, losing.provider_did)
+        if loser_agent is None:
+            continue
+        await enqueue_for_agent(
+            session,
+            agent=loser_agent,
+            job_id=None,
+            event_type="bid.rejected",
+            payload={
+                "request_id": str(req.id),
+                "bid_id": str(losing.id),
+                "reason": "another_bid_accepted",
+                "accepted_bid_id": str(bid.id),
+            },
         )
     await session.commit()
     return {"request": rfq_repo.request_to_public_dict(req), "bid": rfq_repo.bid_to_public_dict(bid)}
