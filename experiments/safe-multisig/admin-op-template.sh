@@ -259,7 +259,7 @@ EXEC_FAILURE = "0x23428b18acfb3ea64b08dc0c1d296ea9c09702c09083ca5272e64d115b687d
 for log in receipt.logs:
     if not log.topics:
         continue
-    t0 = log.topics[0].hex().lower()
+    t0 = "0x" + log.topics[0].hex().lower().removeprefix("0x")
     if t0 == EXEC_SUCCESS.lower():
         print("Event: ExecutionSuccess — Safe completed the tx and the inner call succeeded")
     elif t0 == EXEC_FAILURE.lower():
