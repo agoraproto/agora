@@ -42,7 +42,6 @@ from nacl.signing import SigningKey
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import get_settings
 from ..db import agents_repo
 from ..db.base import get_session
 from ..rate_limit import limiter
@@ -270,7 +269,7 @@ async def diagnose_fund_pipeline() -> dict[str, Any]:
             info["is_file"] = os.path.isfile(p)
             if info["is_file"]:
                 st = os.stat(p)
-                info["stat"] = {"mode_octal": oct(st.st_mode & 0o777), "uid": st.st_uid, "gid": st.st_gid, "size": st.st_size}
+                info["stat"] = {"mode_octal": oct(st.st_mode & 0o777), "uid": st.st_uid, "gid": st.st_gid, "size": st.st_size}  # noqa: E501
                 with open(p) as f:
                     deployer_key = f.read().strip()
         except PermissionError as e:

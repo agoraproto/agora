@@ -161,4 +161,26 @@ async def _reconcile_one(
     requester = await agents_repo.get_by_id(session, job.requester_agent_id)
     provider = await agents_repo.get_by_id(session, job.provider_agent_id)
     event_name = _EVENT_NAMES.get(target, "job.chain_observed")
- 
+    payload = {
+        "job_id": str(job.id),
+        "onchain_job_id": job.onchain_job_id,
+        "status": target.value,
+    }
+    if event_name != "job.chain_observed":
+        if requester is not None:
+            await enqueue_for_agent(
+                session,
+                agent=requester,
+                job_id=job.id,
+                event_type=event_name,
+                payload=payload,
+            )
+        if provider is not None:
+            await enqueue_for_agent(
+                session,
+                agent=provider,
+                job_id=job.id,
+                event_type=event_name,
+                payload=payload,
+            )
+    return True

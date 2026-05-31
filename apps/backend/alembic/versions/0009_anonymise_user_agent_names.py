@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0009"
@@ -50,7 +51,7 @@ def upgrade() -> None:
     ).fetchall()
 
     rewrites = 0
-    for did, name in rows:
+    for did, _name in rows:
         # Same algorithm as the code path: 'User ' + first 8 chars of the
         # last DID segment (e.g. did:agora:c7BacdGCbX7NP-iKntR8nQ -> 'User c7BacdGC').
         suffix = did.rsplit(":", 1)[-1][:8] if did else "anon"

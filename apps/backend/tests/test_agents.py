@@ -159,7 +159,7 @@ async def _seed_eligible_sponsor(client: AsyncClient, session) -> tuple[str, Sig
     """Create a sponsor agent in the DB at trust=verified with 50 jobs."""
     from sqlalchemy import update
 
-    from agora_api.db.models import Agent, TrustLevel
+    from agora_api.db.models import Agent
 
     sk = SigningKey.generate()
     vk_bytes = bytes(sk.verify_key)

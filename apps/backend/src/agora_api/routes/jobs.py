@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -20,7 +21,6 @@ from ..db.models import Agent, Job, JobStatus
 from ..pricing import compute_fee
 from ..rate_limit import limiter
 from ..webhooks.delivery import enqueue_for_agent
-from datetime import UTC, datetime
 
 router = APIRouter()
 

@@ -15,7 +15,6 @@ import pytest
 from httpx import AsyncClient
 from nacl.signing import SigningKey
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────

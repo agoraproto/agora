@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Agent, AgentStatus, AgentType, TrustLevel, User
 
-
 # ── DID generation ──────────────────────────────────────────────────
 
 

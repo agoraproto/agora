@@ -48,7 +48,6 @@ from ..db import users_repo
 from ..db.base import get_session
 from ..db.models import Agent, User
 
-
 # ──────────────────────────────────────────────────────────────────
 # Errors
 # ──────────────────────────────────────────────────────────────────

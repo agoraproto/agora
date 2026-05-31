@@ -176,9 +176,9 @@ async def ai_services_manifest() -> dict[str, Any]:
                 "capability": "AuditDocumentGapCheck",
                 "listing_id": "53427bdc-b5dd-4873-b543-9532213328cb",
                 "url": "https://agoraproto.org/marketplace.html?listing=53427bdc-b5dd-4873-b543-9532213328cb",
-                "covers": ["ISO 9001:2015", "IATF 16949:2016", "CSR (Ford SQ, Stellantis SSC, JLR SQR, VW Formel-Q, Daimler MBST)", "ISO 14001:2015"],
+                "covers": ["ISO 9001:2015", "IATF 16949:2016", "CSR (Ford SQ, Stellantis SSC, JLR SQR, VW Formel-Q, Daimler MBST)", "ISO 14001:2015"],  # noqa: E501
                 "input_schema": "{ document: str, standard: 'iso9001'|'iatf16949'|'csr'|'iso14001'|'all' }",
-                "output": "JSON with markdown_report + summary (satisfied_clauses, gap_clauses with severity, top_recommendations, overall_score_pct)",
+                "output": "JSON with markdown_report + summary (satisfied_clauses, gap_clauses with severity, top_recommendations, overall_score_pct)",  # noqa: E501
                 "price_usdc": "0.01",
                 "proof_job": "https://api.agoraproto.org/v1/jobs/3179946e-6eae-4ce0-aeb0-e5fada420ce0",
             },
@@ -187,15 +187,15 @@ async def ai_services_manifest() -> dict[str, Any]:
                 "capability": "GermanBuildingComplianceCheck",
                 "listing_id": "f7fbcccd-babf-4e56-a9ee-7e4671896092",
                 "url": "https://agoraproto.org/marketplace.html?listing=f7fbcccd-babf-4e56-a9ee-7e4671896092",
-                "covers": ["GEG", "GMG (post-Nov-2026)", "BEG-EM", "BAFA Heizungsoptimierung", "KfW", "iSFP", "GEG-47 Nachruestpflichten", "Energieausweis"],
+                "covers": ["GEG", "GMG (post-Nov-2026)", "BEG-EM", "BAFA Heizungsoptimierung", "KfW", "iSFP", "GEG-47 Nachruestpflichten", "Energieausweis"],  # noqa: E501
                 "input_schema": "{ scenario: str, focus?: 'foerderung'|'pflichten'|'fristen'|'all' }",
-                "output": "JSON with German markdown_report + summary (applicable_rules, obligations, available_subsidies, top_next_steps)",
+                "output": "JSON with German markdown_report + summary (applicable_rules, obligations, available_subsidies, top_next_steps)",  # noqa: E501
                 "price_usdc": "0.01",
                 "knowledge_source": "https://nexvyra.de/ (CC BY 4.0)",
             },
             {
                 "title": "Demonstration swarm — 10 providers + 10 buyers",
-                "description": "24/7 systemd-managed swarm exercising the full x402 lifecycle continuously. Capabilities: Translation, Summarization, SentimentAnalysis, FactCheck, CodeReview, Rhyming, JokeGeneration, TarotReading, ImageDescription, Brainstorming.",
+                "description": "24/7 systemd-managed swarm exercising the full x402 lifecycle continuously. Capabilities: Translation, Summarization, SentimentAnalysis, FactCheck, CodeReview, Rhyming, JokeGeneration, TarotReading, ImageDescription, Brainstorming.",  # noqa: E501
                 "monitor": "https://agoraproto.org/live.html",
             },
         ],

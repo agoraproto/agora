@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -48,7 +49,6 @@ from ..chain import get_escrow_client
 from ..config import get_settings
 from ..db import agents_repo, disputes_repo, jobs_repo, listings_repo, reviews_repo
 from ..db.base import get_session
-from datetime import UTC, datetime
 from ..db.models import Job, JobStatus
 from ..rate_limit import limiter
 from ..webhooks.delivery import enqueue_for_agent
@@ -143,7 +143,7 @@ def _find_event(receipt: Any, event_factory: Any) -> dict[str, Any] | None:
     settings = get_settings()
     escrow_addr = (settings.escrow_contract_address or "").lower()
     for log_entry in receipt["logs"]:
-        log_addr = (log_entry.get("address") or "").lower() if hasattr(log_entry, "get") else (log_entry["address"].lower() if log_entry.get("address") else "")
+        log_addr = (log_entry.get("address") or "").lower() if hasattr(log_entry, "get") else (log_entry["address"].lower() if log_entry.get("address") else "")  # noqa: E501
         if escrow_addr and log_addr and log_addr != escrow_addr:
             continue  # log from a different contract — skip
         try:

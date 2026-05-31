@@ -20,7 +20,7 @@ from ..auth import get_current_user_optional
 from ..config import get_settings
 from ..db import agents_repo, jobs_repo, listings_repo
 from ..db.base import get_session
-from ..db.models import Agent, JobStatus, ListingKind, ListingType, User
+from ..db.models import Agent, ListingKind, ListingType, User
 from ..rate_limit import limiter
 
 router = APIRouter()
@@ -261,7 +261,7 @@ async def list_listings(
     include_test: bool = False,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Browse marketplace listings. Default hides demo/test listings (Sprint 27a). Pass ?include_test=true to include."""
+    """Browse marketplace listings. Default hides demo/test listings (Sprint 27a). Pass ?include_test=true to include."""  # noqa: E501
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=400, detail="limit must be in 1..200")
     if offset < 0:
