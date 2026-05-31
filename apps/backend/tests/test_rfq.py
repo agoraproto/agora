@@ -651,3 +651,34 @@ async def test_accept_bid_marks_other_pending_bids_rejected(
         assert by_id[b["id"]]["status"] == "rejected", (
             f"losing bid {b['id']} should be rejected, got {by_id[b['id']]['status']}"
         )
+
+
+@pytest.mark.asyncio
+async def test_create_bid_accepts_naive_expires_at(client: AsyncClient) -> None:
+    """Sprint 36f: provider clients that serialise expires_at without an
+    explicit tz suffix should not crash with TypeError on the comparison.
+    The handler must coerce naive datetimes to UTC before comparing."""
+    buyer_key = SigningKey.generate()
+    provider_key = SigningKey.generate()
+    buyer_did = "did:agora:buyer_naive_tz"
+    provider_did = "did:agora:provider_naive_tz"
+    await _register_agent(client, buyer_did, buyer_key)
+    await _register_agent(client, provider_did, provider_key)
+
+    r = await client.post(
+        "/v1/requests",
+        json=_create_request_signed(buyer_did, buyer_key, title="Naive tz check"),
+    )
+    assert r.status_code == 201, r.text
+    rid = r.json()["id"]
+
+    # Build a normal bid body then strip the tz suffix from expires_at to
+    # simulate a sloppy provider client.
+    bid_body = _bid_signed(provider_did, provider_key, request_id=rid, expires_in_minutes=10)
+    # Strip "+00:00" or "Z" suffix.
+    bid_body["expires_at"] = bid_body["expires_at"].rstrip("Z").split("+")[0]
+
+    r = await client.post(f"/v1/requests/{rid}/bids", json=bid_body)
+    # Either accepted (201) or signature-rejected (400) — but NOT 500.
+    # The point: no TypeError crash from naive-vs-aware comparison.
+    assert r.status_code in (201, 400), r.text

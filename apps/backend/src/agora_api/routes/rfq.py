@@ -371,7 +371,12 @@ async def create_bid(
     # Sprint 34b: reject bids that are already expired at submit time.
     # A small grace period (10s) prevents flaky rejections caused by
     # clock skew between provider and server.
-    if body.expires_at <= datetime.now(UTC) - timedelta(seconds=10):
+    # Sprint 36f: body.expires_at may come in tz-naive if the client serialised
+    # without an offset; coerce to UTC-aware (matches accept_bid path).
+    bid_expires = body.expires_at
+    if bid_expires.tzinfo is None:
+        bid_expires = bid_expires.replace(tzinfo=UTC)
+    if bid_expires <= datetime.now(UTC) - timedelta(seconds=10):
         raise HTTPException(
             status_code=400,
             detail="bid expires_at must be in the future",
