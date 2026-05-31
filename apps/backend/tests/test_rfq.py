@@ -533,18 +533,18 @@ async def test_accept_bid_rejects_replayed_nonce_across_requests(
     await _register_agent(client, provider_did, provider_key)
 
     # First request → bid → accept (legitimately) with nonce X.
-    req_a = (
-        await client.post(
-            "/v1/requests",
-            json=_create_request_signed(buyer_did, buyer_key, title="A"),
-        )
-    ).json()
-    bid_a = (
-        await client.post(
-            f"/v1/requests/{req_a['id']}/bids",
-            json=_bid_signed(provider_did, provider_key, request_id=req_a["id"]),
-        )
-    ).json()
+    r = await client.post(
+        "/v1/requests",
+        json=_create_request_signed(buyer_did, buyer_key, title="A"),
+    )
+    assert r.status_code == 201, r.text
+    req_a = r.json()
+    r = await client.post(
+        f"/v1/requests/{req_a['id']}/bids",
+        json=_bid_signed(provider_did, provider_key, request_id=req_a["id"]),
+    )
+    assert r.status_code == 201, r.text
+    bid_a = r.json()
     shared_nonce = "shared-accept-nonce"
     accept_a = _accept_bid_signed(
         buyer_did, buyer_key,
@@ -558,18 +558,18 @@ async def test_accept_bid_rejects_replayed_nonce_across_requests(
     assert r.status_code == 200, r.text
 
     # Second request → bid → try accept with SAME nonce X by same buyer.
-    req_b = (
-        await client.post(
-            "/v1/requests",
-            json=_create_request_signed(buyer_did, buyer_key, title="B"),
-        )
-    ).json()
-    bid_b = (
-        await client.post(
-            f"/v1/requests/{req_b['id']}/bids",
-            json=_bid_signed(provider_did, provider_key, request_id=req_b["id"]),
-        )
-    ).json()
+    r = await client.post(
+        "/v1/requests",
+        json=_create_request_signed(buyer_did, buyer_key, title="B"),
+    )
+    assert r.status_code == 201, r.text
+    req_b = r.json()
+    r = await client.post(
+        f"/v1/requests/{req_b['id']}/bids",
+        json=_bid_signed(provider_did, provider_key, request_id=req_b["id"]),
+    )
+    assert r.status_code == 201, r.text
+    bid_b = r.json()
     accept_b = _accept_bid_signed(
         buyer_did, buyer_key,
         request_id=req_b["id"], bid_id=bid_b["id"], bid_hash=bid_b["bid_hash"],
