@@ -23,6 +23,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -518,3 +519,34 @@ class Bid(Base, TimestampMixin):
         index=True,
     )
 
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 36d: signed-action replay protection for buyer-side endpoints.
+# Provider bids already have (request_id, provider_did, nonce) unique on
+# the bids table; buyer-side actions (rfq.create, rfq.accept) had no
+# persistent nonce ledger and so could be replayed. This table closes
+# that gap.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class SignedAction(Base, TimestampMixin):
+    """A nonce-once record of a signed action by a DID-bearing actor.
+
+    INSERT-and-catch-IntegrityError on the unique constraint provides
+    atomic replay protection. The intent string is the action namespace
+    (e.g. "rfq.create", "rfq.accept", future "x402.hire").
+    """
+
+    __tablename__ = "signed_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    actor_did: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    intent: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_did", "intent", "nonce",
+            name="uq_signed_actions_actor_intent_nonce",
+        ),
+    )

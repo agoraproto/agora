@@ -7,9 +7,16 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Bid, BidStatus, ServiceRequest, ServiceRequestStatus
+from .models import (
+    Bid,
+    BidStatus,
+    ServiceRequest,
+    ServiceRequestStatus,
+    SignedAction,
+)
 
 
 async def create_request(
@@ -182,3 +189,31 @@ def bid_to_public_dict(row: Bid) -> dict[str, Any]:
         "status": row.status.value if hasattr(row.status, "value") else str(row.status),
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
+
+
+async def record_signed_action(
+    session: AsyncSession,
+    *,
+    actor_did: str,
+    intent: str,
+    nonce: str,
+) -> bool:
+    """Atomically reserve a (actor_did, intent, nonce) triple.
+
+    Returns True if the row was inserted (i.e. this nonce is fresh).
+    Returns False if the unique constraint rejected the insert (replay).
+
+    Caller commits later as part of the surrounding transaction; we use
+    a SAVEPOINT (nested) so a constraint violation doesn't poison the
+    outer transaction. Backend callers should treat False as "replay,
+    return HTTP 409".
+    """
+    row = SignedAction(actor_did=actor_did, intent=intent, nonce=nonce)
+    sp = await session.begin_nested()
+    session.add(row)
+    try:
+        await sp.commit()
+    except IntegrityError:
+        await sp.rollback()
+        return False
+    return True

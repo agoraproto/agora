@@ -284,6 +284,14 @@ async def create_request(
         nonce=body.nonce,
     )
     _verify_agent_signature(buyer, body.signed_payload, body.signature)
+    # Sprint 36d: persistent nonce ledger to prevent buyer-side replay.
+    fresh = await rfq_repo.record_signed_action(
+        session, actor_did=buyer.did, intent="rfq.create", nonce=body.nonce,
+    )
+    if not fresh:
+        raise HTTPException(
+            status_code=409, detail="nonce already used by this actor for intent=rfq.create"
+        )
     row = await rfq_repo.create_request(
         session,
         buyer_did=buyer.did,
@@ -461,6 +469,14 @@ async def accept_bid(
         nonce=body.nonce,
     )
     _verify_agent_signature(buyer, body.signed_payload, body.signature)
+    # Sprint 36d: persistent nonce ledger to prevent buyer-side replay.
+    fresh = await rfq_repo.record_signed_action(
+        session, actor_did=buyer.did, intent="rfq.accept", nonce=body.nonce,
+    )
+    if not fresh:
+        raise HTTPException(
+            status_code=409, detail="nonce already used by this actor for intent=rfq.accept"
+        )
     await rfq_repo.accept_bid(session, request=req, bid=bid)
     provider = await agents_repo.get_by_did(session, bid.provider_did)
     if provider is not None:

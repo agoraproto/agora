@@ -74,10 +74,12 @@ def _create_request_signed(
     max_price_micro_usdc: int = 10_000,
     currency: str = "USDC",
     deadline: str | None = None,
+    nonce: str | None = None,
 ) -> dict[str, Any]:
     """Build a full signed create_request body."""
     constraints = constraints or {}
-    nonce = secrets.token_hex(8)
+    if nonce is None:
+        nonce = secrets.token_hex(8)
     signed_payload = {
         "intent": "create_request",
         "buyer_did": buyer_did,
@@ -114,9 +116,11 @@ def _accept_bid_signed(
     request_id: str,
     bid_id: str,
     bid_hash: str,
+    nonce: str | None = None,
 ) -> dict[str, Any]:
     """Build a full signed accept_bid body."""
-    nonce = secrets.token_hex(8)
+    if nonce is None:
+        nonce = secrets.token_hex(8)
     signed_payload = {
         "intent": "accept_bid",
         "buyer_did": buyer_did,
@@ -485,3 +489,95 @@ async def test_accept_bid_rejects_expired_bid(client: AsyncClient) -> None:
     )
     assert r.status_code == 410
     assert "expir" in r.json().get("detail", "").lower()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 36d — buyer-side replay protection via signed_actions table
+# ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_request_rejects_replayed_nonce(client: AsyncClient) -> None:
+    """POSTing the same signed create_request body twice must yield 201, 409."""
+    buyer_key = SigningKey.generate()
+    buyer_did = "did:agora:buyer_replay_create"
+    await _register_agent(client, buyer_did, buyer_key)
+
+    body = _create_request_signed(
+        buyer_did, buyer_key, title="Replay-protected create",
+    )
+
+    first = await client.post("/v1/requests", json=body)
+    assert first.status_code == 201, first.text
+    second = await client.post("/v1/requests", json=body)
+    assert second.status_code == 409
+    detail = second.json().get("detail", "")
+    assert "nonce" in detail.lower()
+    assert "rfq.create" in detail
+
+
+@pytest.mark.asyncio
+async def test_accept_bid_rejects_replayed_nonce_across_requests(
+    client: AsyncClient,
+) -> None:
+    """A buyer's accept-nonce must be one-shot across DIFFERENT requests, too.
+
+    Otherwise an attacker who captured one accept can replay it against any
+    later bid the same buyer makes.
+    """
+    buyer_key = SigningKey.generate()
+    provider_key = SigningKey.generate()
+    buyer_did = "did:agora:buyer_replay_accept"
+    provider_did = "did:agora:provider_replay_accept"
+    await _register_agent(client, buyer_did, buyer_key)
+    await _register_agent(client, provider_did, provider_key)
+
+    # First request → bid → accept (legitimately) with nonce X.
+    req_a = (
+        await client.post(
+            "/v1/requests",
+            json=_create_request_signed(buyer_did, buyer_key, title="A"),
+        )
+    ).json()
+    bid_a = (
+        await client.post(
+            f"/v1/requests/{req_a['id']}/bids",
+            json=_bid_signed(provider_did, provider_key, request_id=req_a["id"]),
+        )
+    ).json()
+    shared_nonce = "shared-accept-nonce"
+    accept_a = _accept_bid_signed(
+        buyer_did, buyer_key,
+        request_id=req_a["id"], bid_id=bid_a["id"], bid_hash=bid_a["bid_hash"],
+        nonce=shared_nonce,
+    )
+    r = await client.post(
+        f"/v1/requests/{req_a['id']}/bids/{bid_a['id']}/accept",
+        json=accept_a,
+    )
+    assert r.status_code == 200, r.text
+
+    # Second request → bid → try accept with SAME nonce X by same buyer.
+    req_b = (
+        await client.post(
+            "/v1/requests",
+            json=_create_request_signed(buyer_did, buyer_key, title="B"),
+        )
+    ).json()
+    bid_b = (
+        await client.post(
+            f"/v1/requests/{req_b['id']}/bids",
+            json=_bid_signed(provider_did, provider_key, request_id=req_b["id"]),
+        )
+    ).json()
+    accept_b = _accept_bid_signed(
+        buyer_did, buyer_key,
+        request_id=req_b["id"], bid_id=bid_b["id"], bid_hash=bid_b["bid_hash"],
+        nonce=shared_nonce,  # ← REPLAY across requests
+    )
+    r = await client.post(
+        f"/v1/requests/{req_b['id']}/bids/{bid_b['id']}/accept",
+        json=accept_b,
+    )
+    assert r.status_code == 409
+    assert "rfq.accept" in r.json().get("detail", "")
