@@ -229,6 +229,13 @@ class Job(Base, TimestampMixin):
     release_tx_hash: Mapped[str | None] = mapped_column(Text)
     # uint256 jobId returned by AgoraEscrow.createJob(); Numeric(78,0) fits 2**256.
     onchain_job_id: Mapped[Decimal | None] = mapped_column(Numeric(78, 0), index=True)
+    # Sprint 36g: which AgoraEscrow contract address the job lives under.
+    # Lets the chain_watcher distinguish V1-legacy from V2 jobs after a
+    # contract upgrade so it doesn't poll obsolete onchain_job_ids against
+    # the wrong contract and log unknown_status spam.
+    escrow_contract_address: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     # "offchain" = ledger-only (bootstrap mode); "onchain" = settled via AgoraEscrow.
     settlement_mode: Mapped[str] = mapped_column(String(16), default="offchain", nullable=False)
     chain: Mapped[str] = mapped_column(String(32), default="none", nullable=False)

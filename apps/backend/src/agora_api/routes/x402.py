@@ -305,6 +305,9 @@ async def create_x402_job(
         price_currency="USDC",
         escrow_tx_hash=x_payment_tx,
         onchain_job_id=Decimal(onchain_job_id),
+        # Sprint 36g: pin which contract this job lives under so the
+        # chain_watcher can filter obsolete jobs after a V1→V2 flip.
+        escrow_contract_address=settings.escrow_contract_address,
         settlement_mode="onchain",
         chain=settings.chain_name,
         listing_id=listing_uuid,

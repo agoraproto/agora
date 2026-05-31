@@ -101,12 +101,20 @@ async def chain_watcher_loop(stop_event: asyncio.Event) -> None:
 async def _sweep_once(client: Any) -> None:
     """One pass: find all live on-chain jobs and reconcile each."""
     sm = get_sessionmaker()
+    # Sprint 36g: only reconcile jobs whose recorded escrow address matches
+    # the current settings.escrow_contract_address. Legacy jobs (NULL
+    # column, created before Sprint 36g) and jobs from a previous contract
+    # version are skipped here rather than producing unknown_status log
+    # spam against a contract that doesn't know their job_ids.
+    from ..config import get_settings
+    current_escrow = get_settings().escrow_contract_address
     async with sm() as session:
         result = await session.execute(
             select(Job).where(
                 Job.settlement_mode == "onchain",
                 Job.status.in_(_LIVE_DB_STATUSES),
                 Job.onchain_job_id.is_not(None),
+                Job.escrow_contract_address == current_escrow,
             )
         )
         jobs = list(result.scalars().all())
