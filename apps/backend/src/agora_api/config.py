@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # and mirror their state change.
     chain_watcher_enabled: bool = True
     chain_watcher_interval_seconds: float = 30.0
+    # Sprint 36c: which AgoraEscrow ABI is the contract at the address above?
+    # "v1" = AgoraEscrow.sol (refund/computeFee), "v2" = AgoraEscrowV2.sol
+    # (refundExpired/previewFee + per-job fee snapshot). Defaults to "v1" for
+    # backwards compatibility with environments still pointing at the V1
+    # escrow; production .env should be flipped to "v2" alongside the
+    # ESCROW_CONTRACT_ADDRESS flip (Sprint 35h).
+    escrow_abi_version: Literal["v1", "v2"] = "v1"
 
     # Auth / Custody (Privy - ADR 005)
     privy_app_id: str = ""

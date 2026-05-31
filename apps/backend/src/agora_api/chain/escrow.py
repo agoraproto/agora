@@ -326,13 +326,18 @@ class AgoraEscrowClient:
         usdc_address: str,
         settler_pk: str,
         usdc_decimals: int = 6,
+        abi_version: str = "v1",
     ) -> None:
+        if abi_version not in ("v1", "v2"):
+            raise ValueError(f"abi_version must be 'v1' or 'v2', got {abi_version!r}")
+        self.abi_version = abi_version
         self.w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
         # Base is an OP-stack chain; extra-data field needs POA middleware.
         self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+        escrow_abi = _ESCROW_V2_ABI if abi_version == "v2" else _ESCROW_ABI
         self.escrow = self.w3.eth.contract(
             address=Web3.to_checksum_address(escrow_address),
-            abi=_ESCROW_ABI,
+            abi=escrow_abi,
         )
         self.usdc = self.w3.eth.contract(
             address=Web3.to_checksum_address(usdc_address),
@@ -344,44 +349,40 @@ class AgoraEscrowClient:
     # ── Reads ──────────────────────────────────────────────────────
 
     async def get_job(self, job_id: int) -> OnchainJob:
+        """Read a job from the escrow contract.
+
+        V1 jobs() returns a 7-tuple (payer, payee, amount, taskHash,
+        resultHash, deadline, status). V2 jobs() returns an 11-tuple
+        with 4 additional fee-snapshot fields appended. We unpack via
+        index so both shapes work; the snapshot fee fields are not
+        exposed on OnchainJob yet (no caller needs them today).
+        """
         def _read() -> OnchainJob:
-            payer, payee, amount, task_hash, result_hash, deadline, status = (
-                self.escrow.functions.jobs(job_id).call()
-            )
+            result = self.escrow.functions.jobs(job_id).call()
             return OnchainJob(
-                payer=payer,
-                payee=payee,
-                amount=int(amount),
-                task_hash=task_hash,
-                result_hash=result_hash,
-                deadline=int(deadline),
-                status=int(status),
+                payer=result[0],
+                payee=result[1],
+                amount=int(result[2]),
+                task_hash=result[3],
+                result_hash=result[4],
+                deadline=int(result[5]),
+                status=int(result[6]),
             )
 
         return await asyncio.to_thread(_read)
 
     async def compute_fee(self, amount: int) -> int:
-        """Sprint 35i — V1/V2-agnostic fee preview.
+        """Preview the platform fee for a given amount.
 
-        V1 exposed `computeFee(uint256)`; V2 renamed it to `previewFee` and
-        added per-job snapshot fee params (see contracts/src/AgoraEscrowV2.sol).
-        Both functions have identical (amount -> fee) semantics for the
-        current parameters, so we try V2 first, fall back to V1.
-
-        If the contract reverts both, we fall back to a synthesised value
-        of 0 — better than crashing the entire x402 hire flow when the
-        backend was misconfigured. The actual fee is enforced by the
-        contract itself at settlement time.
+        V1 uses `computeFee(uint256)`, V2 uses `previewFee(uint256)`. Dispatch
+        is by self.abi_version, set from `settings.escrow_abi_version` at
+        client construction. Both contracts return identical fee semantics
+        for the current parameters.
         """
         def _read() -> int:
-            try:
+            if self.abi_version == "v2":
                 return int(self.escrow.functions.previewFee(amount).call())
-            except Exception:
-                try:
-                    return int(self.escrow.functions.computeFee(amount).call())
-                except Exception:
-                    log.warning("compute_fee: both previewFee and computeFee reverted; returning 0")
-                    return 0
+            return int(self.escrow.functions.computeFee(amount).call())
 
         return await asyncio.to_thread(_read)
 
@@ -407,9 +408,39 @@ class AgoraEscrowClient:
         )
 
     async def refund(self, job_id: int) -> str:
+        """Refund an escrowed job back to the payer.
+
+        V1 has a single `refund(jobId)` callable by the owner. V2 split
+        this into `refundExpired(jobId)` (permissionless, after deadline)
+        and `resolveDispute(...)` (owner-arbitrated split). For the
+        common "deadline passed, give the money back" path used by
+        the backend, refundExpired is the correct V2 call.
+        """
+        fn_name = "refundExpired" if self.abi_version == "v2" else "refund"
         return await self._send_tx(
-            self.escrow.functions.refund(job_id),
-            tag="refund",
+            getattr(self.escrow.functions, fn_name)(job_id),
+            tag=fn_name,
+        )
+
+    async def resolve_dispute(
+        self,
+        job_id: int,
+        payee_amount: int,
+        payer_amount: int,
+    ) -> str:
+        """V2-only: owner-arbitrated dispute split (payee + payer + fee).
+
+        Reverts on V1 because the function does not exist; surface a clear
+        error instead of letting the contract revert opaquely.
+        """
+        if self.abi_version != "v2":
+            raise RuntimeError(
+                "resolve_dispute requires V2 escrow; current abi_version="
+                f"{self.abi_version}"
+            )
+        return await self._send_tx(
+            self.escrow.functions.resolveDispute(job_id, payee_amount, payer_amount),
+            tag="resolveDispute",
         )
 
     async def settler_create_job(
@@ -503,4 +534,5 @@ def get_escrow_client() -> AgoraEscrowClient | None:
         usdc_address=s.usdc_contract_address,
         settler_pk=s.agora_settler_private_key,
         usdc_decimals=s.usdc_decimals,
+        abi_version=s.escrow_abi_version,
     )
