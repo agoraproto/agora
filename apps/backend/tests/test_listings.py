@@ -64,7 +64,7 @@ async def test_create_service_listing(client: AsyncClient) -> None:
     assert body["listing_type"] == "service"
     assert body["status"] == "active"
     assert body["service_capability"] == "Translation"
-    assert body["price_amount"] == "0.800000"  # Numeric(18,6) repr
+    assert body["price_amount"] == "0.80"  # Sprint 36: short Decimal repr
     # digital_content must NOT be exposed for services (it's None).
     assert body["digital_content_type"] is None
 
@@ -176,7 +176,11 @@ async def test_get_400_on_bad_uuid(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_archive(client: AsyncClient) -> None:
-    created = (await client.post("/v1/listings", json=_product_listing())).json()
+    # Sprint 10d gated user-listing archive behind auth; agent-listings remain
+    # archivable without auth (the agent's owner is still TODO). So we test
+    # the archive path via a service listing here.
+    await client.post("/v1/agents/register", json=_agent_payload("did:agora:seller_archiver"))
+    created = (await client.post("/v1/listings", json=_service_listing("did:agora:seller_archiver"))).json()
     r = await client.delete(f"/v1/listings/{created['id']}")
     assert r.status_code == 200
     assert r.json()["status"] == "archived"

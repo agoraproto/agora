@@ -41,5 +41,5 @@ async def test_ai_services_manifest(client) -> None:
     assert any(s["language"] == "python" for s in data["sdks"])
     assert any(s["language"] == "typescript" for s in data["sdks"])
     assert "mcp_server" in data
-    assert data["pricing_model"]["fee_pct"] == 1.0
+    assert data["pricing_model"]["fee_pct"] == 0.1  # Sprint 16
     assert "probation" in data["trust_model"]["trust_levels"]
