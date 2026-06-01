@@ -69,7 +69,7 @@ Sprint 32a fixed the "ephemeral key on missing config" bug — but verify the fi
 
 - V1 contract has the findings listed in `SECURITY_REVIEW.md`. We know this. We will not deploy V1 to mainnet.
 - V2 has not been externally audited.
-- Dispute resolution in V2 is owner-arbitrated, not trustless. Sprint 37 (2026-05-31) moved the owner from a single Sepolia EOA to a 2-of-2 Gnosis Safe at [`0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC`](https://sepolia.basescan.org/address/0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC). The two cosigners are test keys held by the deployer for now — for mainnet they will be replaced via the Safe UI (`addOwner` + `removeOwner`) with the founder's hardware wallet plus a separate device. Timelock between Safe and V2 is not yet wired up (Sprint 38 candidate).
+- Dispute resolution in V2 is owner-arbitrated, not trustless. Sprint 37 (2026-05-31) moved the owner from a single Sepolia EOA to a 2-of-2 Gnosis Safe at [`0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC`](https://sepolia.basescan.org/address/0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC). The two cosigners are test keys held by the deployer for now — for mainnet they will be replaced via the Safe UI (`addOwner` + `removeOwner`) with the founder's hardware wallet plus a separate device. Timelock between Safe and V2 is not yet wired up — see [`contracts/TIMELOCK_DESIGN.md`](contracts/TIMELOCK_DESIGN.md) (Sprint 38c) for the proposed design; implementation is a Sprint 39 candidate.
 - The MCP server (`@agora/mcp`) is a stub.
 - `pyproject.toml` was repaired after a mount-lag truncation in Sprint 34e — verify no other artifacts of the same mode.
 
