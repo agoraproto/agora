@@ -214,22 +214,40 @@ Update `V2_LIVE_STATE.md` to show the new ownership chain. Update
   findings, (c) the V2.1 pause-role separation if we go that way, and
   (d) hardware-wallet cosigners replacing the test cosigners.
 
-## 10. Decision required from the operator
+## 10. Operator decisions (locked-in 2026-06-01)
 
-Before we move to Sprint 39 (implementation), the operator needs to
-choose:
+The operator has reviewed §3–§9 and committed to the following:
 
-1. **Pause approach: Option A (V2.1 redeploy with pauser separation) or
-   Option B (accept pause delay during the interim)?** Recommendation: A,
-   but only after this design has external review.
-2. **Executor: Safe-only or address(0) ("anyone after delay")?**
-   Recommendation: Safe-only for the testnet practice round, can
-   liberalize later.
-3. **Delay length: 24 h (recommended) or longer?**
-4. **Do we want the Timelock deployment + ownership migration to happen
-   before or after we re-engage external reviewers?** Recommendation:
-   after, so reviewers see the design first and can comment.
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Pause strategy | **Option A** — plan a V2.1 redeploy with a separate `pauser` role, so `pause()` stays direct while everything else goes through the Timelock. |
+| 2 | Executor role | **Safe-only.** The 2-of-2 Safe is both proposer and executor. Liberal "address(0) = anyone" can come later. |
+| 3 | Delay length | **24 hours** (86 400 seconds). |
+| 4 | Sequencing | **Wait for external reviewer feedback** on this design before implementing. Sprint 39 implementation is blocked until reviewers have had a chance to comment on the design. |
+
+This means Sprint 39 (Timelock implementation + ownership migration) is
+**explicitly gated on receiving external review feedback** on this
+document. The operator is concurrently running active outreach
+(`experiments/external-review-outreach/`) to invite that feedback.
+
+In the meantime V2 remains owned directly by the Safe — the Sprint 37
+state — which is a valid testnet state.
+
+### What reviewers should weigh in on
+
+1. Is the per-function recommendation in §3 sound? Should anything
+   else be moved behind the Timelock (or out of it)?
+2. Is 24 h the right delay? Most pre-mainnet protocols converge on
+   24 h, 48 h, or 7 d depending on attended-ness. Is the operator
+   choosing the right one?
+3. Is Option A (V2.1 redeploy with pauser separation) worth the
+   redeploy cost vs. Option B (pause goes through Timelock with a
+   permanently-queued tx)? Real-world tradeoff.
+4. Anything missing? E.g. is `resolveDispute` left direct
+   defensible, or should it be Timelocked despite the UX cost?
 
 ---
 
 _See `V2_LIVE_STATE.md` for the current concrete state of V2 ownership._
+_See `experiments/external-review-outreach/` for active reviewer
+outreach templates and shortlists._
