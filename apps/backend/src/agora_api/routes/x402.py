@@ -258,26 +258,20 @@ async def create_x402_job(
     if receipt is None or receipt.get("status") != 1:
         raise HTTPException(status_code=402, detail="payment tx not found or reverted")
 
-    # Extract on-chain jobId from JobCreated event
-    onchain_job_id: int | None = None
-    for log_entry in receipt["logs"]:
-        try:
-            parsed = client.escrow.events.JobCreated().process_log(log_entry)
-            onchain_job_id = int(parsed["args"]["jobId"])
-            # Cheap sanity check: amount and taskHash must match what we asked.
-            if int(parsed["args"]["amount"]) != amount:
-                raise HTTPException(status_code=402, detail="amount mismatch")
-            if bytes(parsed["args"]["taskHash"]) != task_hash:
-                raise HTTPException(status_code=402, detail="taskHash mismatch")
-            if parsed["args"]["payee"].lower() != payee_wallet.lower():
-                raise HTTPException(status_code=402, detail="payee mismatch")
-            break
-        except HTTPException:
-            raise
-        except Exception:
-            continue
-    if onchain_job_id is None:
+    # Sprint 40 / X-A1 fix: use _find_event so H-04 address filter applies
+    # here too. Previously the inline loop accepted JobCreated events from
+    # any contract in the receipt, not just our configured escrow.
+    parsed = _find_event(receipt, client.escrow.events.JobCreated)
+    if parsed is None:
         raise HTTPException(status_code=402, detail="JobCreated event missing")
+    onchain_job_id = int(parsed["args"]["jobId"])
+    # Cheap sanity check: amount and taskHash must match what we asked.
+    if int(parsed["args"]["amount"]) != amount:
+        raise HTTPException(status_code=402, detail="amount mismatch")
+    if bytes(parsed["args"]["taskHash"]) != task_hash:
+        raise HTTPException(status_code=402, detail="taskHash mismatch")
+    if parsed["args"]["payee"].lower() != payee_wallet.lower():
+        raise HTTPException(status_code=402, detail="payee mismatch")
 
     # Idempotency: same tx hash → return existing row.
     existing = await jobs_repo.find_by_escrow_tx(session, x_payment_tx)
@@ -736,15 +730,23 @@ async def refund_x402_job(
             "amount": "0",
             "fee_estimate": "0",
             "recipient_contract": settings.escrow_contract_address,
-            "function": "refund",
+            # Sprint 40 / X-A2 fix: V2 dropped the V1 owner-callable refund()
+            # and replaced it with permissionless refundExpired(). Dispatch
+            # the function name based on the configured ABI version so the
+            # 402 instructions are valid against the live contract.
+            "function": (
+                "refundExpired"
+                if settings.escrow_abi_version == "v2"
+                else "refund"
+            ),
             "args": {"jobId": str(onchain_job_id_int)},
             "retry_header": "X-Payment-Tx",
             "expires_in_seconds": 300,
             "note": (
-                "AgoraEscrow.refund(jobId) is only callable by anyone "
-                "once the on-chain deadline has elapsed (block.timestamp "
-                "> deadline). Before then, only the contract owner can "
-                "refund. If your tx reverts, check the deadline."
+                "On V2: refundExpired(jobId) is permissionless after the "
+                "deadline (block.timestamp > deadline). On V1: refund(jobId) "
+                "is callable by anyone after deadline, OR by the owner at "
+                "any time. If your tx reverts, check the deadline."
             ),
         }
         return _payment_required_response(

@@ -225,7 +225,66 @@ These are findings in `apps/backend/src/agora_api/` paths that mediate between u
 
 - **Impact:** Marginal. An attacker who already has a valid signature for a future timestamp could replay it. Practically irrelevant because signatures are computed by the backend's signing key — the attacker would need to control that key, at which point they don't need to replay anything.
 
-- **Recommended fix:** change to one-sided check: `now - ts < max_age` AND `ts <= now + small_clock_skew` (e.g. 30 seconds). Cosmetic but tidy.
+- **Recommended fix:** change to one-sided check: `now - ts < max_age` AND `ts <= now + small_clock_skew` (e.g. 30 seconds). Cosmetic but tidy. **Fixed in Sprint 39b** (commit `39585da`).
+
+---
+
+## 4b. Backend Findings — x402.py (Sprint 40 audit)
+
+Read pass over the 926-line `apps/backend/src/agora_api/routes/x402.py` — the HTTP-402 escrow lifecycle endpoint. This is the central trust surface between agent clients and the V2 contract; every state change goes through here.
+
+### HIGH (operationally)
+
+#### X-A2 — Refund 402 instructions tell agents to call V1 `refund()` which doesn't exist on V2
+
+- **Location:** `refund_x402_job` (line 739): `"function": "refund"` in the 402 payment-required dict.
+
+- **Description:** The 402 response for `/v1/x402/jobs/{job_id}/refund` instructs the agent to call `AgoraEscrow.refund(jobId)`. On V2 this function does not exist — V2 split `refund` into `refundExpired()` (permissionless after deadline) and `resolveDispute()` (owner-only). Any agent that follows the 402 instructions against a V2 escrow will have their tx revert with "function selector not found."
+
+- **Impact:** The agent-facing refund flow is functionally broken on V2 today. No funds are at risk — the escrowed USDC stays in V2, the deadline-elapsed clean-refund path is still possible (the agent can call `refundExpired` directly on Basescan or via SDK), but every agent that uses our recommended x402 flow will hit a revert.
+
+  In practice no V2 job has yet needed refund (the only V2 job, 1d7c3dcd, settled cleanly), but this would block production at first refund attempt.
+
+- **Recommended fix:** dispatch the function name based on `settings.escrow_abi_version`. **Fixed in Sprint 40** — see commit attached.
+
+### MEDIUM
+
+#### X-A1 — JobCreated event lookup in `/jobs` lacks the H-04 address filter
+
+- **Location:** `create_x402_job` (lines 263-280, pre-fix): inline `for log_entry in receipt["logs"]:` loop that calls `client.escrow.events.JobCreated().process_log(log_entry)` without checking which contract emitted the log.
+
+- **Description:** Every other lifecycle endpoint (/result, /approve, /refund, /dispute) uses the `_find_event()` helper, which has the H-04 audit fix: explicitly skip logs from contracts other than the configured escrow address. The /jobs endpoint missed this rewrite — it has its own inline loop.
+
+  Attack: an attacker deploys a fake escrow contract on Base Sepolia, makes a tx that emits a `JobCreated` event with `(amount, taskHash, payee)` values matching what the agent's /jobs POST claims. The fake contract doesn't move any USDC into our real V2; the inline loop in /jobs matches the event by signature alone; the backend creates a Job row pointing to an `onchain_job_id` that lives only in the fake contract.
+
+  Follow-on: the provider does the work. On /result the backend tries to verify a `ResultSubmitted` event on our real V2 for that `onchain_job_id` — which doesn't exist — and returns 402 "event missing." Provider has worked for free; no funds were ever actually escrowed.
+
+- **Impact:** Adversarial provider-griefing primitive. Requires the attacker to spend gas (deploying + calling the fake contract) but not USDC. Severity bumped to MEDIUM because the work-loss is real and the attack is cheap.
+
+- **Recommended fix:** replace the inline loop with `_find_event(receipt, client.escrow.events.JobCreated)`. **Fixed in Sprint 40** — see commit attached.
+
+### LOW
+
+#### X-A3 — `listing_id` parsed via `uuid.UUID(...)` twice
+
+- **Location:** `create_x402_job` lines 191 and 292.
+
+- **Description:** Same input parsed and validated twice — once before the 402 path is taken (to fetch the listing for `payee_wallet` resolution) and once after (to store as `listing_uuid` on the Job row). Cosmetic.
+
+- **Recommended fix:** keep one parse; reuse the variable across the function body.
+
+### INFORMATIONAL
+
+#### X-A4 — `_find_event` log address normalisation is needlessly verbose
+
+- **Location:** `_find_event` line 146:
+  ```python
+  log_addr = (log_entry.get("address") or "").lower() if hasattr(log_entry, "get") else (log_entry["address"].lower() if log_entry.get("address") else "")
+  ```
+
+- **Description:** Defends against `log_entry` being either a dict (has `.get`) or an `AttributeDict`. Web3.py 7.x always returns `AttributeDict` for receipts; the dual-path safety is no longer required. A `# noqa: E501` is required to keep the line under the 120-char limit.
+
+- **Recommended fix:** simplify to `log_addr = (log_entry["address"] or "").lower()`. Cosmetic only.
 
 ---
 
