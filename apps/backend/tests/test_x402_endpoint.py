@@ -407,6 +407,35 @@ async def test_refund_returns_402_with_args(client, session, monkeypatch) -> Non
     assert "deadline" in pr["note"].lower()
 
 
+# Sprint 40 / X-A2 regression: when ESCROW_ABI_VERSION=v2, the /refund 402
+# instructions must tell the agent to call refundExpired (not refund, which
+# doesn't exist on V2). The default-v1 test above still covers V1 behaviour.
+@pytest.mark.asyncio
+async def test_refund_returns_402_with_refundExpired_on_v2(
+    client, session, monkeypatch
+) -> None:
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2", raising=False)
+
+    requester = _ag("did:agora:r2", name="r2", payout=None)
+    provider = _ag("did:agora:p2", name="p2", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    job = _onchain_job(requester, provider, onchain_id=99)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/refund", json={})
+    assert r.status_code == 402, r.text
+    pr = json.loads(r.headers["X-Payment-Required"])
+    assert pr["function"] == "refundExpired", (
+        f"Expected refundExpired on V2, got {pr['function']!r}. "
+        "X-A2 regression: V2 dropped V1's refund() and renamed to refundExpired."
+    )
+    assert pr["args"]["jobId"] == "99"
+
+
 @pytest.mark.asyncio
 async def test_refund_succeeds_with_valid_tx(client, session, monkeypatch) -> None:
     fake = _install_mock_client(monkeypatch)
