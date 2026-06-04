@@ -125,9 +125,23 @@ def verify_signature(
     except (TypeError, ValueError) as e:
         raise SignatureInvalid(f"invalid timestamp: {timestamp!r}") from e
 
-    age = abs(int(time.time()) - ts)
+    # Sprint 39 / B-V2-02 fix: one-sided window. Reject anything older
+    # than max_age_seconds OR meaningfully in the future. The previous
+    # abs() check allowed up to 5 min future timestamps, which is unusual
+    # for webhook verification (signatures should be observably in the
+    # past at delivery time).
+    now = int(time.time())
+    age = now - ts
     if age > max_age_seconds:
-        raise SignatureInvalid(f"timestamp {ts} too old (age={age}s, max={max_age_seconds}s)")
+        raise SignatureInvalid(
+            f"timestamp {ts} too old (age={age}s, max={max_age_seconds}s)"
+        )
+    if age < -30:
+        # Allow up to 30s of clock-skew for legitimate sources; reject
+        # anything claiming to be from a meaningful future.
+        raise SignatureInvalid(
+            f"timestamp {ts} is too far in the future (skew={-age}s)"
+        )
 
     try:
         vk = VerifyKey(base64.b64decode(public_key_b64_str))
