@@ -13,8 +13,9 @@ pragma solidity 0.8.26;
 //   - Adds `resolveDispute(jobId, payeeAmount, payerAmount)` so a Disputed
 //     job is no longer a one-way trap to refund-only (fixes H-01, H-02).
 //   - Restricts `dispute()` to Submitted-state jobs only (fixes H-02).
-//   - Enforces `block.timestamp <= deadline` in `submitResult` and
-//     `approveAndPay` (fixes H-03).
+//   - Enforces `block.timestamp <= deadline` in `submitResult` (fixes H-03);
+//     `approveAndPay` accepts late approval as a deliberate UX choice --
+//     see SECURITY_REVIEW_V2.md M-V2-01 for the trade-off.
 //   - Splits the v1 `refund()` into permissionless `refundExpired()` for
 //     deadline-elapsed Funded jobs and owner-only `resolveDispute()` for
 //     Disputed jobs (fixes C-01, M-06).
@@ -112,7 +113,16 @@ contract AgoraEscrowV2 is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 insuranceCut
     );
 
-    event FeesUpdated(uint16 feeBps, uint256 minFee, uint256 maxFee, uint16 insuranceShareBps);
+    event FeesUpdated(
+        uint16 oldFeeBps,
+        uint256 oldMinFee,
+        uint256 oldMaxFee,
+        uint16 oldInsuranceShareBps,
+        uint16 newFeeBps,
+        uint256 newMinFee,
+        uint256 newMaxFee,
+        uint16 newInsuranceShareBps
+    );
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event InsurancePoolUpdated(address indexed oldPool, address indexed newPool);
 
@@ -128,11 +138,13 @@ contract AgoraEscrowV2 is Ownable2Step, Pausable, ReentrancyGuard {
     error DeadlineNotElapsed();
     error InvalidAddress();
     error InvalidResultHash();
+    error InvalidTaskHash();
     error SelfJob();
     error InvalidSplit();
     error FeeTooHigh();
     error InsuranceShareTooHigh();
     error MinExceedsMax();
+    error ReasonTooLong();
 
     // ─── Constructor ──────────────────────────────────────────
     constructor(
@@ -183,7 +195,7 @@ contract AgoraEscrowV2 is Ownable2Step, Pausable, ReentrancyGuard {
         if (payee == address(0)) revert InvalidAddress();
         if (payee == msg.sender) revert SelfJob();
         if (amount <= minFee) revert AmountTooSmall();
-        if (taskHash == bytes32(0)) revert InvalidResultHash();
+        if (taskHash == bytes32(0)) revert InvalidTaskHash();
         if (deadline <= block.timestamp) revert DeadlineExpired();
 
         // H-05 fix: measure actual delta rather than trust transferFrom.
@@ -262,7 +274,7 @@ contract AgoraEscrowV2 is Ownable2Step, Pausable, ReentrancyGuard {
         if (j.status != JobStatus.Submitted) revert InvalidStatus();
         if (msg.sender != j.payer && msg.sender != j.payee) revert NotParty();
         // Cap the reason length to keep event logs sane.
-        if (bytes(reason).length > 256) revert InvalidStatus();
+        if (bytes(reason).length > 256) revert ReasonTooLong();
 
         j.status = JobStatus.Disputed;
         emit JobDisputed(jobId, msg.sender, reason);
@@ -327,11 +339,14 @@ contract AgoraEscrowV2 is Ownable2Step, Pausable, ReentrancyGuard {
         if (_feeBps > MAX_FEE_BPS) revert FeeTooHigh();
         if (_insuranceShareBps > MAX_INSURANCE_SHARE_BPS) revert InsuranceShareTooHigh();
         if (_minFee > _maxFee) revert MinExceedsMax();
+        emit FeesUpdated(
+            feeBps, minFee, maxFee, insuranceShareBps,
+            _feeBps, _minFee, _maxFee, _insuranceShareBps
+        );
         feeBps = _feeBps;
         minFee = _minFee;
         maxFee = _maxFee;
         insuranceShareBps = _insuranceShareBps;
-        emit FeesUpdated(_feeBps, _minFee, _maxFee, _insuranceShareBps);
     }
 
     function setFeeRecipient(address _r) external onlyOwner {

@@ -317,4 +317,28 @@ contract AgoraEscrowV2Test is Test {
         vm.expectRevert(AgoraEscrowV2.InvalidResultHash.selector);
         escrow.submitResult(jobId, bytes32(0));
     }
+
+    // ── L-V2-01 (Sprint 39): createJob rejects zero taskHash with the RIGHT error
+    function test_createJob_rejects_zero_task_hash() public {
+        vm.startPrank(payer);
+        token.approve(address(escrow), 100_000_000);
+        vm.expectRevert(AgoraEscrowV2.InvalidTaskHash.selector);
+        escrow.createJob(payee, USDC_100, bytes32(0), uint64(block.timestamp + 1 days));
+        vm.stopPrank();
+    }
+
+    // ── I-V2-05 (Sprint 39): dispute rejects over-long reason with the RIGHT error
+    function test_dispute_rejects_long_reason() public {
+        uint256 jobId = _fund(USDC_100, uint64(block.timestamp + 1 days));
+        vm.prank(payee);
+        escrow.submitResult(jobId, keccak256("r"));
+
+        bytes memory longReason = new bytes(257);
+        for (uint256 i = 0; i < 257; i++) {
+            longReason[i] = 0x41;
+        }
+        vm.prank(payer);
+        vm.expectRevert(AgoraEscrowV2.ReasonTooLong.selector);
+        escrow.dispute(jobId, string(longReason));
+    }
 }

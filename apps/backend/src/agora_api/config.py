@@ -59,6 +59,11 @@ class Settings(BaseSettings):
 
     # Auth / Custody (Privy - ADR 005)
     privy_app_id: str = ""
+    # Sprint 39 / B-V2-01: explicit gate for the dev-bearer auth bypass.
+    # Set ALLOW_DEV_BEARER=true ONLY in local dev / pytest. Production must
+    # NEVER set this; the dev bypass (privy.py 'agora-dev:<uid>' tokens) is
+    # otherwise an accidentally-open back door whenever PRIVY_APP_ID drifts.
+    allow_dev_bearer: bool = False
     privy_app_secret: str = ""
 
     # Webhook signing (ADR 008): Ed25519 keypair for outbound webhooks.

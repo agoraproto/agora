@@ -122,11 +122,16 @@ async def verify_privy_jwt(token: str) -> dict[str, Any]:
     """
     settings = get_settings()
 
-    # ── Dev / test escape hatch ──
-    # When PRIVY_APP_ID is not configured we accept a hand-rolled token
-    # so tests don't need a Privy roundtrip. NEVER reachable in prod
-    # because the deploy sets PRIVY_APP_ID.
-    if not settings.privy_app_id:
+    # ── Dev / test escape hatch (Sprint 39 / B-V2-01 hardened) ──
+    # The dev-bearer path accepts `agora-dev:<uid>` tokens and synthesises
+    # the Privy claims for them. Pre-Sprint-39 this was gated implicitly by
+    # `PRIVY_APP_ID == ""`, which was a fail-open posture: any deployment
+    # that lost the env var would silently re-enable the bypass.
+    #
+    # Now: BOTH the explicit `ALLOW_DEV_BEARER=true` flag AND an empty
+    # `PRIVY_APP_ID` are required. Production sets neither; tests / local
+    # dev set both.
+    if settings.allow_dev_bearer and not settings.privy_app_id:
         if token.startswith("agora-dev:"):
             privy_user_id = token.removeprefix("agora-dev:").strip()
             if not privy_user_id:
@@ -134,6 +139,12 @@ async def verify_privy_jwt(token: str) -> dict[str, Any]:
             return {"sub": privy_user_id, "iss": "agora-dev", "aud": "agora-dev"}
         raise PrivyAuthError(
             "Privy auth not configured on this server (set PRIVY_APP_ID)"
+        )
+    if not settings.privy_app_id:
+        # PRIVY_APP_ID not set AND allow_dev_bearer not explicitly enabled.
+        # Refuse to authenticate anything — fail-closed posture.
+        raise PrivyAuthError(
+            "Privy auth not configured (PRIVY_APP_ID empty, ALLOW_DEV_BEARER not set)"
         )
 
     # ── Real verification path ──

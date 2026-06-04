@@ -61,4 +61,4 @@ ignore = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-env = ["RATE_LIMIT_ENABLED=false"]
+env = ["RATE_LIMIT_ENABLED=false", "ALLOW_DEV_BEARER=true"]
