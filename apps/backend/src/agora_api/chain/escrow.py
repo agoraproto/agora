@@ -28,7 +28,6 @@ from typing import Any
 
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
-from web3.types import TxReceipt
 
 from ..config import get_settings
 
@@ -345,6 +344,22 @@ class AgoraEscrowClient:
         )
         self.settler = self.w3.eth.account.from_key(settler_pk) if settler_pk else None
         self.usdc_decimals = usdc_decimals
+        # Sprint 44 / E-A6: catch RPC/config drift early. If the RPC URL
+        # responds with a different chainId than what config says, every
+        # signed tx will go to the wrong chain. Better to fail at construction.
+        try:
+            rpc_chain_id = int(self.w3.eth.chain_id)
+            expected_chain_id = get_settings().chain_id
+            if rpc_chain_id != expected_chain_id:
+                log.warning(
+                    "chain_id_mismatch rpc=%s expected=%s -- tx signing will use "
+                    "RPC's chain_id, which may not match what config promises",
+                    rpc_chain_id, expected_chain_id,
+                )
+        except Exception:
+            # Don't fail construction if the RPC is briefly unreachable; the
+            # later send_tx will raise its own error. Just warn loudly.
+            log.warning("chain_id_check_unreachable -- skipping assertion")
 
     # ── Reads ──────────────────────────────────────────────────────
 
@@ -443,34 +458,17 @@ class AgoraEscrowClient:
             tag="resolveDispute",
         )
 
-    async def settler_create_job(
-        self,
-        payee: str,
-        amount: int,
-        task_hash: bytes,
-        deadline: int,
-    ) -> tuple[str, int]:
-        """Create a job on-chain from the settler wallet.
-
-        Used by x402 endpoint when the *agent* paid USDC to the settler
-        and Agora relays it into escrow. Returns (tx_hash, on_chain_jobId).
-        """
-        tx_hash = await self._send_tx(
-            self.escrow.functions.createJob(
-                Web3.to_checksum_address(payee),
-                amount,
-                task_hash,
-                deadline,
-            ),
-            tag="createJob",
-        )
-        # Parse JobCreated log to recover the contract-side jobId.
-        receipt = await asyncio.to_thread(
-            self.w3.eth.wait_for_transaction_receipt, tx_hash, timeout=60
-        )
-        return tx_hash, self._extract_job_id(receipt)
-
     # ── Internals ──────────────────────────────────────────────────
+    #
+    # Sprint 44 / E-A8: settler_create_job() and _extract_job_id() were
+    # removed. They were implemented for a never-realised "Agora settler
+    # broadcasts createJob on behalf of the agent" flow, but the actual
+    # x402.py /jobs flow has the agent broadcast the createJob tx and
+    # the backend just verifies the receipt. Dead code increases audit
+    # surface without any benefit; if the settler-broadcast flow returns
+    # later, restore from git history (commit a441dd8 or earlier).
+    # _extract_job_id also lacked the H-04 escrow-address filter that
+    # _find_event in x402.py uses; this removal also closes that gap.
 
     async def _send_tx(self, fn: Any, *, tag: str) -> str:
         if self.settler is None:
@@ -496,16 +494,6 @@ class AgoraEscrowClient:
             return "0x" + tx_hash.hex()
 
         return await asyncio.to_thread(_build_and_send)
-
-    def _extract_job_id(self, receipt: TxReceipt) -> int:
-        evt = self.escrow.events.JobCreated()
-        for log_entry in receipt["logs"]:
-            try:
-                parsed = evt.process_log(log_entry)
-                return int(parsed["args"]["jobId"])
-            except Exception:  # log may be from another contract
-                continue
-        raise RuntimeError("JobCreated event not found in receipt")
 
     # ── Helpers ────────────────────────────────────────────────────
 

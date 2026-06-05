@@ -430,6 +430,76 @@ Read pass over the 514-line `apps/backend/src/agora_api/routes/rfq.py` -- the RF
 
 ---
 
+## 4e. Backend Findings -- escrow.py (Sprint 44 audit)
+
+Read pass over the 538-line `apps/backend/src/agora_api/chain/escrow.py` -- the `AgoraEscrowClient` that wraps V1/V2 dispatch via web3.py. Sprint 36c established the explicit version dispatch; this audit re-examines it adversarially.
+
+### MEDIUM (operational, documented not fixed)
+
+#### E-A2 -- `_send_tx` uses hardcoded gas + fee parameters that will fail on mainnet
+
+- **Location:** `_send_tx._build_and_send` (lines 482-491). Hardcoded `gas=500_000`, `maxFeePerGas=0.1 gwei`, `maxPriorityFeePerGas=0.01 gwei`.
+
+- **Description:** Base Sepolia gas prices are typically <0.01 gwei so 0.1 gwei is fine. Base mainnet routinely sees 0.1-1 gwei base fee, with priority sometimes 0.01-0.1 gwei. The hardcoded 0.1 gwei maxFeePerGas would be at or below mainnet base fee, causing every settler tx to be rejected. The hardcoded 500_000 gas limit is generous but also static -- if a future contract path needs more, settler txs revert.
+
+- **Impact:** Settler-broadcast paths break on mainnet. Today the only such path was `settler_create_job` which is now removed (E-A8); but if any new owner-only Safe-Tx-via-settler flow appears, it'll inherit this issue.
+
+- **Recommended fix:** read fee params from `w3.eth.fee_history` or `w3.eth.gas_price` and apply a configurable multiplier. Cap via settings. Defer until a real settler-broadcast caller exists.
+
+#### E-A3 -- Settler private key held in plaintext process memory
+
+- **Location:** `__init__` line 346: `self.settler = self.w3.eth.account.from_key(settler_pk) if settler_pk else None`.
+
+- **Description:** The settler private key is loaded from `.env` and held in plaintext memory of the running process. A process dump, debugger attach, or container-level snapshot could recover it. For testnet practice this is acceptable; for mainnet a hardware-wallet or KMS-based signer would be the right answer.
+
+- **Impact:** Single-host compromise of agora-1 reveals the settler key. Today the settler EOA's only authority on-chain is whatever the Safe hasn't already replaced -- the V2 contract is owned by the Safe, the settler isn't an admin. The settler is just the "pay gas for Safe txs" relayer. So worst case is the attacker pays gas for arbitrary safe-or-V2 calls, which they'd have to construct themselves -- they can't drain anything.
+
+- **Recommended fix:** before mainnet, replace plaintext settler key with a remote signer (Web3Signer, AWS KMS, etc.). Document the threat model.
+
+#### E-A5 -- Nonce read-then-use race in concurrent `_send_tx` calls
+
+- **Location:** `_send_tx._build_and_send` line 482: `nonce = self.w3.eth.get_transaction_count(self.settler.address)`.
+
+- **Description:** Two concurrent `_send_tx` calls will both call `get_transaction_count` and may both observe the same `nonce` value (the second call's tx is broadcast before the first one is mined and visible to the node's mempool). The second tx is then rejected by the node with a "nonce too low / already used" error.
+
+- **Impact:** Operational only. The caller gets a clear error from `send_raw_transaction` and can retry. Today the backend rarely issues concurrent settler txs because the only path that uses the settler-broadcast pattern is `settler_create_job` (just removed in E-A8). If a new high-concurrency settler path appears, this becomes real.
+
+- **Recommended fix:** local nonce cache that increments after broadcast; on tx failure, reset from chain.
+
+### LOW
+
+#### E-A4 -- `get_job` accesses tuple by index, fragile against ABI changes
+
+- **Location:** `get_job._read` lines 360-369.
+
+- **Description:** `result[0]` through `result[6]` indexed access. V2's 11-tuple is correctly handled by only reading the first 7, but if a future V3 reorders fields (e.g. inserts `creationBlock` at position 2) every field's index shifts and `get_job` silently extracts the wrong values into the wrong `OnchainJob` fields.
+
+- **Impact:** Hypothetical future-V3 bug. Not exploitable today.
+
+- **Recommended fix:** decode by field name. If web3.py returns a named tuple for struct-returning functions, use `result.payer`, `result.payee`, etc.
+
+### INFORMATIONAL
+
+#### E-A6 -- No assertion that RPC's chain_id matches settings.chain_id
+
+- **Location:** `__init__` -- pre-fix, no chain_id check.
+
+- **Description:** If `settings.rpc_url` points at a different chain than `settings.chain_id` claims (config drift, copy-paste error, Anvil left running on chain 31337), every signed tx is signed with the wrong chain_id and either reverts at the destination or, more dangerously, becomes a valid tx on the chain the RPC actually serves.
+
+- **Recommended fix:** check at construction and either fail-loud or warn-loud. **Fixed in Sprint 44** -- warn-only because failing construction blocks the entire backend boot on a transient RPC failure; warn lets the next `send_tx` raise its own error.
+
+#### E-A8 -- Dead code: `settler_create_job` and `_extract_job_id`
+
+- **Location:** Pre-fix lines 446-471 and 500-508.
+
+- **Description:** Implemented for a never-realised settler-broadcast createJob path. The actual x402 /jobs flow has the agent broadcast and the backend just verifies the receipt (via the much safer `_find_event` helper). Dead code in a security-sensitive file is audit-noise that can mislead reviewers.
+
+- Also: `_extract_job_id` had the same missing H-04 escrow-address filter that we just fixed in x402.py (X-A1) -- it accepted any `JobCreated` event in the receipt regardless of which contract emitted it. Removing it closes that gap too.
+
+- **Recommended fix:** delete both. **Fixed in Sprint 44** -- restore from git if a real settler-broadcast caller appears.
+
+---
+
 ## 5. What this self-audit did NOT cover
 
 To set expectations honestly:
