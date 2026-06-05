@@ -530,3 +530,64 @@ In the meantime:
 _See [`EXTERNAL_REVIEW_REQUEST.md`](EXTERNAL_REVIEW_REQUEST.md) for how to submit findings._
 _See [`TIMELOCK_DESIGN.md`](TIMELOCK_DESIGN.md) for the planned hardening of admin-key risk._
 _See [`V2_LIVE_STATE.md`](../apps/backend/docs/V2_LIVE_STATE.md) for the live state of V2 today._
+
+---
+
+## 7. Sprint 45 -- Timelock landing (Option B)
+
+**Date:** 2026-06-06
+**Status:** code + tests + runbooks landed; on-chain deploy + ownership flip remain.
+
+`contracts/TIMELOCK_DESIGN.md` Option B is implemented:
+
+- `contracts/script/DeployTimelock.s.sol` -- deploys an OpenZeppelin
+  `TimelockController` with `minDelay=86400`, Safe as proposer + canceller +
+  executor, no external admin.
+- `contracts/test/TimelockController.t.sol` -- 11 forge tests:
+  role assignment, no-external-admin invariant, 24h minDelay, schedule→wait→execute
+  happy path on `setFees`, cancel removes pending proposal, attacker cannot
+  schedule, attacker cannot execute after Safe scheduled, V2 ownership flip
+  simulated, `pause()` confirmed to require the 24h delay (Option B's documented
+  operational cost).
+- `experiments/timelock/` -- three runbooks:
+  - `RUNBOOK_DEPLOY.md` -- deploy + post-deploy verification of all 5 role/delay
+    invariants before any ownership transfer.
+  - `RUNBOOK_OWNERSHIP_FLIP.md` -- the two-phase `transferOwnership` →
+    schedule(`acceptOwnership`) → 24h → execute flow.
+  - `RUNBOOK_PERMANENT_PAUSE_QUEUE.md` -- the rolling pre-queued pause that
+    mitigates Option B's 24h pause delay.
+
+### Known regressions introduced by Option B
+
+| Function | Before Sprint 45 | After Sprint 45 | Mitigation |
+|---|---|---|---|
+| `pause()` | Safe-direct, instant | Timelock-scheduled, 24h delay | Rolling pre-queued pause (`RUNBOOK_PERMANENT_PAUSE_QUEUE.md`) |
+| `unpause()` | Safe-direct, instant | Timelock-scheduled, 24h delay | Acceptable; deliberate restart should be slow |
+| `resolveDispute(jobId, ...)` | Safe-direct, instant | Timelock-scheduled, 24h delay | **NOT acceptable for Mainnet.** TIMELOCK_DESIGN.md §5 flags this as a V2.1 candidate. For Sepolia testnet practice: acceptable. |
+| `setFees`, `setFeeRecipient`, `setInsurancePool`, `transferOwnership` | Safe-direct, instant | Timelock-scheduled, 24h delay | Intended; no mitigation needed. |
+
+### What is NOT addressed by Sprint 45
+
+- Mainnet readiness for `resolveDispute`. TIMELOCK_DESIGN.md §5 still
+  recommends V2.1 contract changes (oracle / 2-of-3 arbitrator pattern)
+  before going to Mainnet.
+- Automation of the rolling pause refresh. For Sepolia this is a manual
+  on-call task. Mainnet should automate or replace it.
+- The Timelock has not been audited by an external party in this sprint.
+  The OZ TimelockController itself is widely deployed and audited; the
+  configuration (proposers, executors, delay) is what the new test suite
+  validates.
+
+### Live state once `RUNBOOK_OWNERSHIP_FLIP.md` lands
+
+After both phases of the ownership flip, the on-chain control chain is:
+
+```
+Safe 2-of-2 (0x8Ec6...)
+  --[ proposer + canceller + executor ]-->  TimelockController (new)
+                                              --[ owner ]-->  AgoraEscrowV2 (0x0e8E...)
+```
+
+This file's `Owner:` header at the top of §1 will be updated to point at the
+Timelock once the flip lands.
+
