@@ -320,13 +320,13 @@ Read pass over the 194-line `apps/backend/src/agora_api/chain/watcher.py` -- the
 
 ### LOW
 
-#### W-A3 -- Redundant late import + re-read of settings inside `_sweep_once`
+#### W-A3 -- ~~Redundant~~ INTENTIONAL late import of settings inside `_sweep_once`
 
-- **Location:** `_sweep_once` line 109 -- `from ..config import get_settings` inside the function body, even though `get_settings` is already imported at module level (line 32).
+- **Location:** `_sweep_once` line 109 -- `from ..config import get_settings` inside the function body.
 
-- **Description:** Cosmetic. The late re-import was apparently added during the Sprint 36g hotfix and never cleaned up. The `get_settings()` call is cached via `@lru_cache`, so there's no runtime cost -- just visual clutter.
+- **Description:** ~~Cosmetic. The late re-import was apparently added during the Sprint 36g hotfix and never cleaned up.~~ **Self-audit follow-up:** the late import is INTENTIONAL. It enables tests to patch `agora_api.config.get_settings` without having to know about (or re-patch) the binding in `agora_api.chain.watcher`. Sprint 41 "fixed" this by moving to the module-level import, which silently broke `test_sweep_filters_by_current_escrow_address` (CI #130 caught it). Reverted in Sprint 43-fix with an explanatory comment so future readers don't repeat the mistake.
 
-- **Recommended fix:** drop the inline import. **Fixed in Sprint 41**.
+- **Lesson:** "redundant late import" is a frequent false-positive when test code patches the wrong layer. Sprint 41's analysis was wrong; the audit doc retains it for transparency.
 
 #### W-A4 -- No backoff between sweeps on consecutive RPC failures
 

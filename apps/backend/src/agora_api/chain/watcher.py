@@ -106,9 +106,14 @@ async def _sweep_once(client: Any) -> None:
     # column, created before Sprint 36g) and jobs from a previous contract
     # version are skipped here rather than producing unknown_status log
     # spam against a contract that doesn't know their job_ids.
-    # Sprint 41 / W-A3: get_settings is imported at module level; no need
-    # to re-import inside the function.
-    current_escrow = get_settings().escrow_contract_address
+    # Sprint 43-fix: late re-import is INTENTIONAL despite looking
+    # redundant. It ensures pytest fixtures patching
+    # `agora_api.config.get_settings` are picked up; a module-level
+    # `from ..config import get_settings` binds the name at import time
+    # and won't be reached by the patch. Sprint 41's W-A3 "fix"
+    # incorrectly removed this and broke test_sweep_filters_by_current_escrow_address.
+    from ..config import get_settings as _get_settings_late
+    current_escrow = _get_settings_late().escrow_contract_address
     async with sm() as session:
         # Sprint 41 / W-A6: cap the per-sweep job count. If we ever come
         # back online with thousands of stale jobs, this avoids one
