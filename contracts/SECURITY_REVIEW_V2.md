@@ -372,6 +372,64 @@ Read pass over the 194-line `apps/backend/src/agora_api/chain/watcher.py` -- the
 
 ---
 
+## 4d. Backend Findings -- rfq.py (Sprint 43 audit)
+
+Read pass over the 514-line `apps/backend/src/agora_api/routes/rfq.py` -- the RFQ (Request for Quote) marketplace endpoint suite (Sprint 31 + 34a/b for buyer signatures + 36d/e for replay protection and losing-bid lifecycle).
+
+### LOW
+
+#### R-A1 -- `_require_fresh_timestamp` window was symmetric, accepting future timestamps
+
+- **Location:** `_require_fresh_timestamp` (lines 130-140, pre-fix). Same pattern as the B-V2-02 webhook timestamp finding, replicated here in the RFQ signed-payload validation.
+
+- **Description:** `abs(now - ts) > timedelta(seconds=120)` accepted timestamps up to 120s in the future. An attacker who briefly captured a buyer's signed payload (e.g. via a passive MITM during signing) could replay it up to 2 minutes later, extending the practical replay surface beyond the intent of a freshness window.
+
+- **Impact:** Marginal. Defence-in-depth posture is worth tightening because RFQ signed payloads are higher-stakes than webhook signatures (they bind a buyer to a price commitment).
+
+- **Recommended fix:** one-sided window: reject anything older than 120s, OR more than 30s in the future. **Fixed in Sprint 43** -- see commit attached.
+
+#### R-A2 -- `_verify_agent_signature` had a broad `except Exception` clause that masked server-side errors
+
+- **Location:** `_verify_agent_signature` (lines 238-249, pre-fix).
+
+- **Description:** The outer `except Exception` at line 248 caught all errors -- including programmer errors like `KeyError`, `TypeError`, broken `did_document` parsing -- and surfaced them as 400 "signature invalid". A real signature-mismatch error was indistinguishable from a malformed-DID-document server bug, hampering debugging and giving attackers no useful error signal but also hiding real issues from operators.
+
+- **Recommended fix:** catch only `nacl.exceptions.BadSignatureError` (the actual "wrong signature" case) and `binascii.Error` (the base64 case). Let everything else propagate as 500. **Fixed in Sprint 43**.
+
+### MEDIUM (operational, not fixed in this sprint)
+
+#### R-A3 -- Race condition between `count_bids_*` and `create_bid` flush
+
+- **Location:** `create_bid` (lines 389-395 + 408).
+
+- **Description:** The endpoint checks `count_bids_for_request(...) >= MAX_BIDS_PER_REQUEST` and `count_bids_for_provider(...) >= MAX_BIDS_PER_AGENT_PER_REQUEST` at the application layer, then inserts a new bid row at line 408. Two concurrent `/bids` POSTs can both observe `N < MAX`, both pass, both insert -- ending up at `N + 2`.
+
+- **Impact:** Soft-limit violations only. MAX_BIDS_PER_REQUEST=50 and MAX_BIDS_PER_AGENT_PER_REQUEST=3 are anti-spam limits, not security boundaries. Exceeding by 1-2 is harmless but inelegant.
+
+- **Recommended fix:** rely on DB-level uniqueness instead of application-layer counts. Add `UNIQUE(request_id, provider_did, sequence)` with a per-provider sequence column, OR use `SELECT ... FOR UPDATE` to serialise the count-then-insert. Operational improvement, not security-critical.
+
+#### R-A4 -- Race between concurrent `create_bid` and `accept_bid` can leave dangling `pending` bid
+
+- **Location:** `create_bid` (line 368 status check) vs `accept_bid` (line 485 `rfq_repo.accept_bid` which sets request to accepted + losing-bids to rejected).
+
+- **Description:** `create_bid` reads `req.status == open` at line 368. If `accept_bid` for the same request commits between this read and our INSERT, our new bid lands attached to a now-accepted request. Sprint 36e's losing-bid sweep already ran and didn't include our new bid (it's not yet inserted at that point), so the new bid stays at `pending` status forever on an already-closed request.
+
+- **Impact:** Dangling pending bid on an accepted request. Not exploitable but confusing for the bidding agent who's holding signed resources expecting they might still win.
+
+- **Recommended fix:** add `WHERE request.status = 'open'` to the INSERT predicate, OR re-check status at flush time and revert if changed. Cleaner: switch to a transactional pattern where accept_bid takes an advisory lock that create_bid respects.
+
+### INFORMATIONAL
+
+#### R-A5 -- `deadline` not coerced to UTC-aware in `CreateRequestBody`
+
+- **Location:** `CreateRequestBody.deadline` (line 57) and uses at line 199 + 304.
+
+- **Description:** Same shape as the Sprint 34f bid.expires_at fix and the Sprint 36f create_bid.expires_at fix. A buyer sending a naive datetime in `deadline` will have `deadline.isoformat()` produce a no-tz string that the server signs against; later comparisons against `datetime.now(UTC)` would raise TypeError if the field were ever consumed in that pattern. Today nothing in `create_request` compares `deadline` to "now", so the bug doesn't surface -- but it's a tz-aware footgun waiting for a future sprint to step on.
+
+- **Recommended fix:** coerce in the model validator OR at use-site. Same pattern as Sprint 34f / 36f. Pre-emptive hygiene.
+
+---
+
 ## 5. What this self-audit did NOT cover
 
 To set expectations honestly:

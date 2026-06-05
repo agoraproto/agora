@@ -16,6 +16,7 @@ to prevent cross-protocol replay between create and accept.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import uuid
@@ -23,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from nacl.exceptions import BadSignatureError
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,9 +137,23 @@ def _require_fresh_timestamp(payload: dict[str, Any]) -> None:
         ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"bad timestamp: {e}") from e
+    # Sprint 43 / R-A1 fix: one-sided window. Previously abs() let buyers
+    # pre-sign payloads up to 120s in the future, expanding the replay
+    # surface for any attacker who got a signed message before its
+    # intended use. Now: reject anything older than the window, OR
+    # meaningfully in the future (>30s of clock-skew tolerance).
     now = datetime.now(UTC)
-    if abs(now - ts) > timedelta(seconds=TIMESTAMP_WINDOW_SECONDS):
-        raise HTTPException(status_code=400, detail="signed_payload.timestamp outside replay window")
+    age = (now - ts).total_seconds()
+    if age > TIMESTAMP_WINDOW_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"signed_payload.timestamp too old (age={age:.0f}s, max={TIMESTAMP_WINDOW_SECONDS}s)",
+        )
+    if age < -30:
+        raise HTTPException(
+            status_code=400,
+            detail=f"signed_payload.timestamp too far in future (skew={-age:.0f}s)",
+        )
 
 
 def _require_bid_payload_matches(
@@ -236,17 +252,22 @@ def _require_accept_payload_matches(
 
 
 def _verify_agent_signature(agent: Agent, payload: dict[str, Any], signature: str) -> None:
+    # Sprint 43 / R-A4 fix: narrow the b64 catch to binascii.Error so that
+    # programmer errors (e.g. accidentally passing a non-str signature) bubble
+    # up as 500s rather than masquerading as "signature is not base64" 400s.
     try:
-        sig = base64.b64decode(signature)
-    except Exception as e:
+        sig = base64.b64decode(signature, validate=True)
+    except (binascii.Error, ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=f"signature is not base64: {e}") from e
     try:
         verify_key = extract_verify_key_from_did_document(agent.did_document or {})
-        verify_key.verify(canonical_json_bytes(payload), sig)
     except SponsorshipInvalid as e:
         raise HTTPException(status_code=400, detail=f"agent DID has no usable Ed25519 key: {e}") from e
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"signature invalid: {e}") from e
+    try:
+        verify_key.verify(canonical_json_bytes(payload), sig)
+    except BadSignatureError as e:
+        raise HTTPException(status_code=400, detail=f"signature does not verify: {e}") from e
+    # Any other exception (key parsing errors, etc.) propagates -> 500.
 
 
 async def _load_request_or_404(session: AsyncSession, request_id: uuid.UUID):
