@@ -288,6 +288,90 @@ Read pass over the 926-line `apps/backend/src/agora_api/routes/x402.py` — the 
 
 ---
 
+## 4c. Backend Findings -- watcher.py (Sprint 41 audit)
+
+Read pass over the 194-line `apps/backend/src/agora_api/chain/watcher.py` -- the background loop that reconciles on-chain state with the DB when agents bypass our /v1/x402 endpoints and talk to the escrow contract directly.
+
+### MEDIUM
+
+#### W-A1 -- Partial commit semantics: status update commits even if webhook enqueue fails
+
+- **Location:** `_sweep_once` (lines 124-136) and `_reconcile_one` (lines 165-194).
+
+- **Description:** `_reconcile_one` flushes the `job.status` change at line 166 _before_ enqueueing the two webhooks (one to requester, one to provider). The outer loop in `_sweep_once` catches per-job exceptions (line 129) and continues to the next job. At the end of the loop, if `any_change` is True, the session is committed (line 136) -- which includes the flushed-but-no-webhook-enqueued state from a partially-failed job.
+
+  Result: the DB ends up with `status == completed` (say) but the corresponding `job.completed` webhook never reaches the agent. On the next sweep, the watcher's check `if target == job.status: return False` returns immediately because the status now matches -- so the webhook is permanently lost.
+
+- **Impact:** Silent webhook loss under partial failure of `enqueue_for_agent`. Agent that's relying on the webhook to drive its own state machine (claim payment, retry result, etc.) never gets the signal.
+
+- **Recommended fix:** wrap each `_reconcile_one` in a SAVEPOINT (`session.begin_nested()`) so failures roll back the whole job's changes including the status update. Or: do the enqueue BEFORE setting `job.status = target`, so a failure leaves the next sweep re-attempting from scratch.
+
+#### W-A2 -- `onchain_job_id` was a `Decimal` in the webhook payload; default `json.dumps` cannot serialise it
+
+- **Location:** `_reconcile_one` line 172-176 (pre-fix).
+
+- **Description:** `job.onchain_job_id` is mapped to SQLAlchemy `Numeric(78, 0)` which materialises as Python `Decimal`. `enqueue_for_agent` writes the payload into the `webhook_deliveries` table's `JSON` column, which goes through `json.dumps`. The default encoder raises `TypeError: Object of type Decimal is not JSON serializable`. 
+
+  In production today this path has never fired because the only completed V2 job (`1d7c3dcd`) was settled via `/v1/x402/jobs/{id}/approve`, which goes through `x402.py` and never touches the watcher's enqueue path. The first V2 job that completes via direct on-chain interaction (agent bypasses our API) would hit this.
+
+- **Impact:** Watcher webhook delivery silently broken for direct-on-chain completions. Combined with W-A1 above, the silent breakage is impossible to detect from the API side -- the operator only finds out when an agent complains "I never got my completion webhook."
+
+- **Recommended fix:** explicit cast to `int` in the payload. **Fixed in Sprint 41** -- see commit attached.
+
+### LOW
+
+#### W-A3 -- Redundant late import + re-read of settings inside `_sweep_once`
+
+- **Location:** `_sweep_once` line 109 -- `from ..config import get_settings` inside the function body, even though `get_settings` is already imported at module level (line 32).
+
+- **Description:** Cosmetic. The late re-import was apparently added during the Sprint 36g hotfix and never cleaned up. The `get_settings()` call is cached via `@lru_cache`, so there's no runtime cost -- just visual clutter.
+
+- **Recommended fix:** drop the inline import. **Fixed in Sprint 41**.
+
+#### W-A4 -- No backoff between sweeps on consecutive RPC failures
+
+- **Location:** `chain_watcher_loop` lines 89-93.
+
+- **Description:** If the configured RPC URL is unreachable, every sweep raises an exception, gets caught at line 92, sleeps `interval` (5+ seconds), and retries. After N consecutive failures, the watcher should back off exponentially (cap at e.g. 5 min). Today it hammers the RPC at the configured interval forever.
+
+- **Impact:** Operational only. Doesn't lose data; just generates log noise and a small load on the RPC endpoint. Not critical for testnet.
+
+- **Recommended fix:** track consecutive-failure count; backoff `min(interval * 2**failures, 300)` until a successful sweep.
+
+### INFORMATIONAL
+
+#### W-A5 -- Race vs `x402.py`: two paths can both fire the same event
+
+- **Location:** `_reconcile_one` (watcher) and `approve_x402_job` (x402.py line 666-676).
+
+- **Description:** Both code paths can fire `job.completed` when the on-chain `JobApproved` event lands. Today the race is benign: the watcher's `if target == job.status: return False` check makes it a no-op once x402.py has updated the DB. But the two enqueues could in principle write two `webhook_deliveries` rows for the same `(job_id, event_type)` pair if they truly race (x402.py reads job.status=offered, decides to update; watcher reads chain status=Approved + DB status=offered, decides to update; both write).
+
+  Postgres's per-row locks at flush time serialise the actual `UPDATE jobs SET status` writes, but the `INSERT INTO webhook_deliveries` rows are independent and would both commit.
+
+- **Impact:** Possible duplicate webhook to the agent for one state change. Agents are expected to be idempotent in their handlers (the webhook contract says so), so impact is bounded.
+
+- **Recommended fix:** add a `UNIQUE(job_id, event_type, status)` constraint on `webhook_deliveries` so a duplicate insert is caught at the DB layer. Or: at the application layer, check for an existing delivery before enqueueing.
+
+#### W-A6 -- Sweep query was unbounded
+
+- **Location:** `_sweep_once` lines 112-119 (pre-fix).
+
+- **Description:** The SELECT had no LIMIT. If the watcher came back online after a multi-day outage with thousands of stale jobs, a single sweep could spend several minutes blocking subsequent ones (each job is an RPC roundtrip).
+
+- **Impact:** Operational. Today there are ~5-10 live V2 jobs at any time so the issue is hypothetical. But a single bad RPC + thousands of stale jobs is a real DoS surface for ourselves.
+
+- **Recommended fix:** add `.limit(1000).order_by(Job.created_at.asc())` so worst-case sweep is bounded. **Fixed in Sprint 41**.
+
+#### W-A7 -- get_job() is sequential per job, not batched via multicall
+
+- **Location:** `_reconcile_one` line 145.
+
+- **Description:** N live jobs = N sequential RPC roundtrips per sweep. Currently fine because N is small (single-digit V2 jobs). At 100+ jobs it becomes the dominant latency source.
+
+- **Recommended fix:** add a `batch_get_job(job_ids)` to `AgoraEscrowClient` that uses multicall3 or a custom batch contract. Out of scope for testnet practice; flag for mainnet.
+
+---
+
 ## 5. What this self-audit did NOT cover
 
 To set expectations honestly:

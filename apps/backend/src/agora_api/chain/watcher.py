@@ -106,16 +106,24 @@ async def _sweep_once(client: Any) -> None:
     # column, created before Sprint 36g) and jobs from a previous contract
     # version are skipped here rather than producing unknown_status log
     # spam against a contract that doesn't know their job_ids.
-    from ..config import get_settings
+    # Sprint 41 / W-A3: get_settings is imported at module level; no need
+    # to re-import inside the function.
     current_escrow = get_settings().escrow_contract_address
     async with sm() as session:
+        # Sprint 41 / W-A6: cap the per-sweep job count. If we ever come
+        # back online with thousands of stale jobs, this avoids one
+        # multi-minute sweep blocking subsequent ones. 1000 at 100-200ms
+        # per RPC call is 1.5-3 min worst-case which is acceptable.
         result = await session.execute(
-            select(Job).where(
+            select(Job)
+            .where(
                 Job.settlement_mode == "onchain",
                 Job.status.in_(_LIVE_DB_STATUSES),
                 Job.onchain_job_id.is_not(None),
                 Job.escrow_contract_address == current_escrow,
             )
+            .order_by(Job.created_at.asc())
+            .limit(1000)
         )
         jobs = list(result.scalars().all())
         if not jobs:
@@ -171,7 +179,11 @@ async def _reconcile_one(
     event_name = _EVENT_NAMES.get(target, "job.chain_observed")
     payload = {
         "job_id": str(job.id),
-        "onchain_job_id": job.onchain_job_id,
+        # Sprint 41 / W-A2 fix: onchain_job_id is Numeric(78,0) -> Decimal
+        # in SQLAlchemy. JSON delivery would fail on Decimal without an
+        # explicit encoder; cast to int (safe up to 2**53 for json.dumps,
+        # well above any realistic jobId).
+        "onchain_job_id": int(job.onchain_job_id) if job.onchain_job_id is not None else None,
         "status": target.value,
     }
     if event_name != "job.chain_observed":
