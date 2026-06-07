@@ -591,3 +591,64 @@ Safe 2-of-2 (0x8Ec6...)
 This file's `Owner:` header at the top of §1 will be updated to point at the
 Timelock once the flip lands.
 
+---
+
+## 8. Sprint 46+47 -- ADR + V2.1 spike landing
+
+**Date:** 2026-06-06
+**Status:** ADR adopted; V2.1 spike landed as draft code + tests.
+**Deploy state:** NOT deployed. Sepolia V2 remains the live contract. V2.1
+deploy waits on external audit.
+
+`contracts/ADR_M-V2-DECISIONS.md` resolves the open M-V2-01 / M-V2-02
+findings and the Sprint-45 Timelock-Option-B regressions (pause() delay,
+resolveDispute() delay) by specifying four patches:
+
+| Patch | Code |
+|---|---|
+| M-V2-01: payee force-approve after deadline + 7d | `payeeForceApprove(uint256)` |
+| M-V2-02: payer force-refund on Submitted after deadline + 3d | extended `refundExpired` branch |
+| T-V2.1-01: separate pauser role direct from Safe | `pauser` state + `onlyPauserOrOwner` modifier on `pause()` |
+| T-V2.1-02: separate disputeResolver role direct from Safe | `disputeResolver` state + `onlyResolverOrOwner` modifier on `resolveDispute` |
+
+Implementation:
+- `contracts/src/AgoraEscrowV21.sol` -- V2 fork with the four patches.
+  All V2 hardening (H-01..H-05, M-01..M-06, L-01..L-04 from the V1 review)
+  retained verbatim. ABI is a superset of V2 with three new selectors
+  (`payeeForceApprove`, `setPauser`, `setDisputeResolver`) and unchanged
+  behaviour for all existing V2 callers.
+- `contracts/test/AgoraEscrowV21.t.sol` -- 19 forge tests covering all
+  four patches and their failure modes (non-payee force-approve, non-payer
+  force-refund, attacker pause/resolve, owner fallback when role unset, etc).
+
+### What V2.1 explicitly does NOT change
+
+- The dispute-resolution trust model is still owner/role-based. ADR §3
+  flags the Oracle / 2-of-3 Arbitrator pattern as Sprint 50+, after V2.1
+  has been audited and is live on Sepolia.
+- No change to `approveAndPay` semantics for the happy case -- payer still
+  controls the immediate-approve path.
+- No change to fee math, fee caps, or insurance share. V2's `compute_fee`
+  semantics are preserved exactly.
+- No new admin entry points beyond the two new role setters.
+
+### Migration story (when V2.1 deploys)
+
+Backend `escrow.py` already does V1/V2 ABI-version dispatch (Sprint 35a +
+Sprint 36c). V2.1 is ABI-compatible with V2 for the existing surface, so
+"V2.1" can ship with the same dispatch profile as "V2" plus the three new
+selectors. Listed RFQ jobs and active escrow positions stay on V2 until
+they reach terminal state. New jobs route to V2.1.
+
+Will be detailed in `MAINNET_MIGRATION_RUNBOOK.md` (Sprint 48).
+
+### Carved-out, not deferred
+
+- V2.1 does NOT modify `compute_fee` to fix L-V2-02 (precision loss in
+  resolveDispute fee math). Marked Mainnet-blocker; will land in V2.1
+  iff externally-flagged. Not in the Sprint 47 spike scope to keep the
+  diff focused.
+- The transient-storage refactor of `_settleApprovalAndPayout` returns
+  `(fee, insuranceCut)` explicitly rather than using contract storage
+  (gas-cleaner, audit-cleaner).
+
