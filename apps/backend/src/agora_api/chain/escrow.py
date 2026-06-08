@@ -299,7 +299,8 @@ _ESCROW_V2_ABI: list[dict[str, Any]] = [
 
 # Sprint 47 / v2.1 ABI: V2 ABI plus three new selectors and three new events.
 # V2.1 ABI is a strict superset of V2 -- existing V2 callers work unchanged.
-_ESCROW_V21_ABI: list[dict[str, Any]] = _ESCROW_V2_ABI + [
+_ESCROW_V21_ABI: list[dict[str, Any]] = [
+    *_ESCROW_V2_ABI,
     {"type": "function", "name": "payeeForceApprove", "stateMutability": "nonpayable",
      "inputs": [{"name": "jobId", "type": "uint256"}], "outputs": []},
     {"type": "function", "name": "setPauser", "stateMutability": "nonpayable",

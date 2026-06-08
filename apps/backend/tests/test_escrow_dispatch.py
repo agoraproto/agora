@@ -226,7 +226,7 @@ async def test_payee_force_approve_works_on_v21() -> None:
 async def test_payee_force_approve_rejects_v1() -> None:
     """Calling payee_force_approve on a V1 client must error before touching RPC."""
     client = _build_client("v1")
-    with pytest.raises(RuntimeError, match="requires V2.1"):
+    with pytest.raises(RuntimeError, match=r"requires V2\.1"):
         await client.payee_force_approve(99)
 
 
@@ -234,5 +234,5 @@ async def test_payee_force_approve_rejects_v1() -> None:
 async def test_payee_force_approve_rejects_v2() -> None:
     """V2 also lacks payeeForceApprove — must error clearly, not opaque-revert."""
     client = _build_client("v2")
-    with pytest.raises(RuntimeError, match="requires V2.1"):
+    with pytest.raises(RuntimeError, match=r"requires V2\.1"):
         await client.payee_force_approve(99)
