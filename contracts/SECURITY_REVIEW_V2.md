@@ -652,3 +652,44 @@ Will be detailed in `MAINNET_MIGRATION_RUNBOOK.md` (Sprint 48).
   `(fee, insuranceCut)` explicitly rather than using contract storage
   (gas-cleaner, audit-cleaner).
 
+### Sprint 47b/47c/47d follow-up (2026-06-08)
+
+The V2.1 spike now has its backend and integration-test surface in place:
+
+- **Sprint 47b** -- `apps/backend/src/agora_api/chain/escrow.py` learns the
+  `v2.1` ABI version. `_ESCROW_V21_ABI` is a strict superset of `_ESCROW_V2_ABI`
+  with `payeeForceApprove`, `setPauser`, `setDisputeResolver`, plus the
+  `JobApprovedByPayeeForce`, `PauserUpdated`, `DisputeResolverUpdated` events.
+  Dispatch (`compute_fee`, `refund`, `resolve_dispute`) routes `v2.1` through
+  the same selectors as `v2`. New `payee_force_approve()` client method
+  guards on `abi_version == "v2.1"`. 7 new regression tests in
+  `tests/test_escrow_dispatch.py`.
+
+- **Sprint 47c** -- `apps/backend/src/agora_api/routes/x402.py` adds the
+  `POST /v1/x402/jobs/{job_id}/payee-force-approve` agent-native rail.
+  Pre-flight enforces V2.1 ABI, `submitted` job status, and `deadline + 7d`
+  grace mirror the on-chain contract checks. Retry verifies BOTH
+  `JobApprovedByPayeeForce` AND `JobApproved` events in the receipt.
+  Webhook payload includes `force_approved_by_payee: true` so reputation
+  tooling can distinguish the M-V2-01 path. 6 new tests in
+  `tests/test_x402_endpoint.py`.
+
+- **Sprint 47d** -- `contracts/test/AgoraEscrowV21Timelock.t.sol` --
+  14 forge tests proving V2.1 + TimelockController + Safe-as-pauser/resolver
+  works end-to-end:
+  * V2.1 is Timelock-owned (post-flip simulated)
+  * Safe is pauser + disputeResolver
+  * `pause()` is instant via Safe (T-V2.1-01 regression fix confirmed)
+  * `resolveDispute()` is instant via Safe (T-V2.1-02 regression fix confirmed)
+  * `unpause()` still requires 24h Timelock (intentional asymmetry)
+  * `setFees` / `setPauser` / `setDisputeResolver` still require 24h Timelock
+  * `payeeForceApprove` and `refundExpired` work under Timelock ownership
+  * Attacker without PROPOSER_ROLE cannot schedule
+  
+  This is the single most important test for an external reviewer: it shows
+  V2.1's role-separation design actually solves the Sprint 45 Option B
+  regressions without breaking any other invariant.
+
+**Not deployed.** Production stays on V2. Activation gated on external audit
++ Phase A of `runbooks/MAINNET_MIGRATION_RUNBOOK.md`.
+
