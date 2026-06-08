@@ -22,6 +22,11 @@ Inspired by the Coinbase x402 spec. The full job lifecycle is:
               first call:  402 + X-Payment-Required (dispute args)
               retry:       200 with updated job row, status="disputed"
 
+  payee-force-approve  → POST /v1/x402/jobs/{job_id}/payee-force-approve  (V2.1 only, provider)
+              first call:  402 + X-Payment-Required (payeeForceApprove args)
+              retry:       200 with updated job row, status="completed"
+              valid only after deadline + 7 days (ADR M-V2-01 escape valve)
+
 Every "first call" returns a machine-readable 402 telling the agent the
 exact on-chain call to make. Every "retry" verifies the tx receipt on
 chain, double-checks the event args against what the API itself
@@ -926,3 +931,207 @@ async def dispute_x402_job(
     await session.commit()
     await session.refresh(job)
     return _job_view(job)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 47c -- Payee force-approve  (V2.1 only)
+#
+# Implements the agent-native rail for the M-V2-01 escape valve documented
+# in contracts/ADR_M-V2-DECISIONS.md and contracts/src/AgoraEscrowV21.sol's
+# `payeeForceApprove(uint256)`.
+#
+# This endpoint exists so that an honest provider whose payer has gone silent
+# can finalise a Submitted job without involving the operator. The contract
+# itself enforces:
+#   * job.status == Submitted
+#   * msg.sender == job.payee
+#   * block.timestamp > job.deadline + 7 days
+#
+# The backend mirrors all three checks pre-flight so the agent doesn't burn
+# gas on a guaranteed revert, and verifies the JobApproved event in the
+# retry receipt (same pattern as /approve).
+#
+# V1/V2-only deployments respond with 503 because the selector does not
+# exist on those contracts. The /jobs/{id}/dispute path remains the legacy
+# escape valve for those.
+# ─────────────────────────────────────────────────────────────────────
+
+# Grace window from ADR_M-V2-DECISIONS.md / AgoraEscrowV21.FORCE_APPROVE_GRACE.
+# Mirrors the on-chain constant; if the contract ever changes, this needs to
+# change too -- they're checked against each other in the integration test.
+PAYEE_FORCE_APPROVE_GRACE_SECONDS = 7 * 24 * 3600
+
+
+class X402PayeeForceApproveRequest(BaseModel):
+    pass
+
+
+@router.post(
+    "/jobs/{job_id}/payee-force-approve",
+    summary="Force-approve a stuck Submitted job as the payee (V2.1 only, after deadline + 7d)",
+)
+@limiter.limit("30/minute")
+async def payee_force_approve_x402_job(
+    request: Request,
+    job_id: str,
+    body: X402PayeeForceApproveRequest,
+    session: AsyncSession = Depends(get_session),
+    x_payment_tx: str | None = Header(default=None, alias="X-Payment-Tx"),
+) -> Any:
+    settings = get_settings()
+    client = get_escrow_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="on-chain settlement disabled (set enable_onchain_payments=true)",
+        )
+
+    # Sprint 47c: V2.1-only entry point. V1 / V2 contracts have no payeeForceApprove
+    # selector -- routing an agent there guarantees a revert. Surface the
+    # configuration mismatch as a clear 503 instead.
+    if settings.escrow_abi_version != "v2.1":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "payee-force-approve requires V2.1 escrow; current "
+                f"escrow_abi_version={settings.escrow_abi_version}. "
+                "Use /dispute on V1/V2 deployments as the legacy escape valve."
+            ),
+        )
+
+    job = await _load_onchain_job_or_404(session, job_id)
+
+    if job.status == JobStatus.completed:
+        return _job_view(job)
+    if job.status != JobStatus.submitted:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job {job_id} cannot be payee-force-approved from state "
+                f"{job.status.value}; expected 'submitted' "
+                "(disputed jobs go through resolveDispute)"
+            ),
+        )
+
+    # Sprint 47c: deadline + 7d grace pre-flight. The contract enforces the
+    # same window; we check it here so an agent that asks early gets a clear
+    # 409 with the remaining wait, not an on-chain revert.
+    if job.deadline is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job {job_id} has no on-chain deadline recorded; cannot compute force-approve eligibility",
+        )
+    # Job.deadline is a tz-aware datetime; convert to unix for the contract
+    # constant (FORCE_APPROVE_GRACE = 7 days, in seconds).
+    deadline_unix = int(job.deadline.timestamp())
+    now_unix = int(datetime.now(UTC).timestamp())
+    earliest = deadline_unix + PAYEE_FORCE_APPROVE_GRACE_SECONDS
+    if now_unix <= earliest:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"payee-force-approve not yet eligible: "
+                f"deadline {deadline_unix} + 7d grace ends at {earliest}, "
+                f"current {now_unix}, wait {earliest - now_unix}s "
+                f"({(earliest - now_unix) // 3600}h) more"
+            ),
+        )
+
+    onchain_job_id_int = int(job.onchain_job_id)  # type: ignore[arg-type]
+
+    # ── Step 1: no X-Payment-Tx → return 402 with payeeForceApprove args ──
+    if x_payment_tx is None:
+        payment_required = {
+            "version": "1",
+            "chain": settings.chain_name,
+            "chain_id": settings.chain_id,
+            "amount": "0",
+            "fee_estimate": "0",
+            "recipient_contract": settings.escrow_contract_address,
+            "function": "payeeForceApprove",
+            "args": {"jobId": str(onchain_job_id_int)},
+            "retry_header": "X-Payment-Tx",
+            "expires_in_seconds": 300,
+            "note": (
+                "V2.1 only. Callable by the payee (= provider) after "
+                "deadline + 7 days. Releases the escrow to the payee "
+                "and emits JobApproved + JobApprovedByPayeeForce."
+            ),
+        }
+        return _payment_required_response(
+            payment_required,
+            hint=(
+                "Call AgoraEscrowV21.payeeForceApprove with the parameters "
+                "in X-Payment-Required, then retry this request with "
+                "X-Payment-Tx: <tx_hash>. Only the payee (original provider) "
+                "can call; the contract enforces NotPayee otherwise."
+            ),
+        )
+
+    # ── Step 2: verify and apply ──
+    receipt = client.w3.eth.get_transaction_receipt(x_payment_tx)
+    if receipt is None or receipt.get("status") != 1:
+        raise HTTPException(status_code=402, detail="payment tx not found or reverted")
+
+    # JobApprovedByPayeeForce is V2.1-specific. We also still expect the
+    # JobApproved event (the contract emits both for accounting parity with
+    # the normal approveAndPay path).
+    force_evt = _find_event(receipt, client.escrow.events.JobApprovedByPayeeForce)
+    if force_evt is None:
+        raise HTTPException(
+            status_code=402,
+            detail="JobApprovedByPayeeForce event missing -- tx did not exercise the V2.1 force-approve path",
+        )
+    if int(force_evt["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch on JobApprovedByPayeeForce")
+
+    approved_evt = _find_event(receipt, client.escrow.events.JobApproved)
+    if approved_evt is None:
+        raise HTTPException(status_code=402, detail="JobApproved event missing")
+    if int(approved_evt["args"]["jobId"]) != onchain_job_id_int:
+        raise HTTPException(status_code=402, detail="jobId mismatch on JobApproved")
+
+    # Mirror state into DB. Same final state as a normal /approve completion.
+    job.release_tx_hash = x_payment_tx
+    job.status = JobStatus.completed
+    if job.completed_at is None:
+        job.completed_at = datetime.now(UTC)
+    await session.flush()
+
+    # Reputation counters same as /approve.
+    requester = await agents_repo.get_by_id(session, job.requester_agent_id)
+    provider = await agents_repo.get_by_id(session, job.provider_agent_id)
+    if requester is not None:
+        await reviews_repo.increment_jobs_completed(session, requester)
+    if provider is not None:
+        await reviews_repo.increment_jobs_completed(session, provider)
+
+    if job.listing_id is not None:
+        listing = await listings_repo.get(session, job.listing_id)
+        if listing is not None:
+            await listings_repo.increment_sales(session, listing)
+
+    # Webhook payload: same shape as job.completed from /approve, plus an
+    # explicit marker so the receiving agent can tell this was the
+    # force-approve path (e.g. for reputation tooling that wants to flag
+    # "payer was unresponsive" cases).
+    payload = {
+        **_job_view(job),
+        "fee_smallest_unit": str(approved_evt["args"]["fee"]),
+        "insurance_smallest_unit": str(approved_evt["args"]["insuranceCut"]),
+        "force_approved_by_payee": True,
+    }
+    for agent in (requester, provider):
+        if agent is not None:
+            await enqueue_for_agent(
+                session,
+                agent=agent,
+                job_id=job.id,
+                event_type="job.completed",
+                payload=payload,
+            )
+
+    await session.commit()
+    await session.refresh(job)
+    return _job_view(job)
+

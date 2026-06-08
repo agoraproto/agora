@@ -473,3 +473,164 @@ async def test_refund_blocked_once_submitted(client, session, monkeypatch) -> No
 
     r = await client.post(f"/v1/x402/jobs/{job.id}/refund", json={})
     assert r.status_code == 409
+
+
+# ── /jobs/{id}/payee-force-approve (Sprint 47c, V2.1-only) ────────────
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_rejects_non_v21_escrow(client, session, monkeypatch) -> None:
+    """V1 / V2 backends must 503 because the selector does not exist."""
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    job = _onchain_job(requester, provider, status=JobStatus.submitted, onchain_id=42)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/payee-force-approve", json={})
+    assert r.status_code == 503, r.text
+    assert "V2.1" in r.text
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_rejects_wrong_status(client, session, monkeypatch) -> None:
+    """Job must be Submitted; offered/disputed/etc. all 409."""
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2.1", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    # Offered (= on-chain Funded) is the wrong start state
+    job = _onchain_job(requester, provider, status=JobStatus.offered, onchain_id=42)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/payee-force-approve", json={})
+    assert r.status_code == 409, r.text
+    assert "submitted" in r.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_rejects_before_grace(client, session, monkeypatch) -> None:
+    """deadline + 7d must have elapsed; before that we 409 with wait time."""
+    from datetime import UTC, datetime, timedelta
+
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2.1", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    # Deadline only 1 day ago -- we want 7d after deadline before force-approve
+    job = _onchain_job(requester, provider, status=JobStatus.submitted, onchain_id=42)
+    job.deadline = datetime.now(UTC) - timedelta(days=1)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/payee-force-approve", json={})
+    assert r.status_code == 409, r.text
+    assert "not yet eligible" in r.text.lower()
+    # Roughly 6 days of wait remaining; just verify the numeric is positive
+    assert "wait " in r.text
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_returns_402_with_args(client, session, monkeypatch) -> None:
+    """Eligible Submitted job, no X-Payment-Tx -> 402 with payeeForceApprove calldata."""
+    from datetime import UTC, datetime, timedelta
+
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2.1", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    job = _onchain_job(requester, provider, status=JobStatus.submitted, onchain_id=42)
+    # Deadline 10 days ago: well past the 7d grace
+    job.deadline = datetime.now(UTC) - timedelta(days=10)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/payee-force-approve", json={})
+    assert r.status_code == 402, r.text
+    pr = json.loads(r.headers["X-Payment-Required"])
+    assert pr["function"] == "payeeForceApprove"
+    assert pr["args"]["jobId"] == "42"
+    assert "v2.1" in pr["note"].lower()
+    assert "payee" in pr["note"].lower()
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_succeeds_with_valid_tx(client, session, monkeypatch) -> None:
+    """Submitted job past grace, retry with valid receipt -> 200 + status=completed."""
+    from datetime import UTC, datetime, timedelta
+
+    fake = _install_mock_client(monkeypatch)
+    _patch_receipt_ok(fake)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2.1", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    job = _onchain_job(requester, provider, status=JobStatus.submitted, onchain_id=42)
+    job.deadline = datetime.now(UTC) - timedelta(days=10)
+    session.add(job)
+    await session.commit()
+
+    # _find_event is stubbed to return whatever args we set. The endpoint
+    # checks two events in sequence (JobApprovedByPayeeForce, then JobApproved),
+    # so the stub needs to provide both args sets. The simple _patch_event
+    # helper returns ONE shape for every call -- we'd need a stateful stub.
+    # Patch _find_event manually to return based on the event factory name.
+    call_count = {"n": 0}
+    def stub_find_event(receipt, ev_factory):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return {"args": {"jobId": 42, "payee": "0x" + "9" * 40}, "event": "JobApprovedByPayeeForce"}
+        return {"args": {"jobId": 42, "fee": 1000, "insuranceCut": 100}, "event": "JobApproved"}
+    monkeypatch.setattr(x402_module, "_find_event", stub_find_event)
+
+    r = await client.post(
+        f"/v1/x402/jobs/{job.id}/payee-force-approve",
+        json={},
+        headers={"X-Payment-Tx": "0x" + "f" * 64},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_payee_force_approve_idempotent_when_completed(client, session, monkeypatch) -> None:
+    """A job already in completed state returns 200 without touching anything."""
+    _install_mock_client(monkeypatch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "escrow_abi_version", "v2.1", raising=False)
+
+    requester = _ag("did:agora:r", name="r", payout=None)
+    provider = _ag("did:agora:p", name="p", payout="0x" + "9" * 40)
+    session.add_all([requester, provider])
+    await session.flush()
+    job = _onchain_job(requester, provider, status=JobStatus.completed, onchain_id=42)
+    session.add(job)
+    await session.commit()
+
+    r = await client.post(f"/v1/x402/jobs/{job.id}/payee-force-approve", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "completed"
+
