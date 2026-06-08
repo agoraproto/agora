@@ -297,6 +297,37 @@ _ESCROW_V2_ABI: list[dict[str, Any]] = [
 ]
 
 
+# Sprint 47 / v2.1 ABI: V2 ABI plus three new selectors and three new events.
+# V2.1 ABI is a strict superset of V2 -- existing V2 callers work unchanged.
+_ESCROW_V21_ABI: list[dict[str, Any]] = _ESCROW_V2_ABI + [
+    {"type": "function", "name": "payeeForceApprove", "stateMutability": "nonpayable",
+     "inputs": [{"name": "jobId", "type": "uint256"}], "outputs": []},
+    {"type": "function", "name": "setPauser", "stateMutability": "nonpayable",
+     "inputs": [{"name": "pauser", "type": "address"}], "outputs": []},
+    {"type": "function", "name": "setDisputeResolver", "stateMutability": "nonpayable",
+     "inputs": [{"name": "resolver", "type": "address"}], "outputs": []},
+    {"type": "function", "name": "pauser", "stateMutability": "view", "inputs": [],
+     "outputs": [{"name": "", "type": "address"}]},
+    {"type": "function", "name": "disputeResolver", "stateMutability": "view", "inputs": [],
+     "outputs": [{"name": "", "type": "address"}]},
+    {"type": "event", "name": "JobApprovedByPayeeForce", "anonymous": False,
+     "inputs": [
+         {"name": "jobId", "type": "uint256", "indexed": True},
+         {"name": "payee", "type": "address", "indexed": True},
+     ]},
+    {"type": "event", "name": "PauserUpdated", "anonymous": False,
+     "inputs": [
+         {"name": "oldPauser", "type": "address", "indexed": True},
+         {"name": "newPauser", "type": "address", "indexed": True},
+     ]},
+    {"type": "event", "name": "DisputeResolverUpdated", "anonymous": False,
+     "inputs": [
+         {"name": "oldResolver", "type": "address", "indexed": True},
+         {"name": "newResolver", "type": "address", "indexed": True},
+     ]},
+]
+
+
 
 @dataclass(frozen=True)
 class OnchainJob:
@@ -327,13 +358,18 @@ class AgoraEscrowClient:
         usdc_decimals: int = 6,
         abi_version: str = "v1",
     ) -> None:
-        if abi_version not in ("v1", "v2"):
-            raise ValueError(f"abi_version must be 'v1' or 'v2', got {abi_version!r}")
+        if abi_version not in ("v1", "v2", "v2.1"):
+            raise ValueError(f"abi_version must be 'v1' | 'v2' | 'v2.1', got {abi_version!r}")
         self.abi_version = abi_version
         self.w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
         # Base is an OP-stack chain; extra-data field needs POA middleware.
         self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-        escrow_abi = _ESCROW_V2_ABI if abi_version == "v2" else _ESCROW_ABI
+        if abi_version == "v2.1":
+            escrow_abi = _ESCROW_V21_ABI
+        elif abi_version == "v2":
+            escrow_abi = _ESCROW_V2_ABI
+        else:
+            escrow_abi = _ESCROW_ABI
         self.escrow = self.w3.eth.contract(
             address=Web3.to_checksum_address(escrow_address),
             abi=escrow_abi,
@@ -395,7 +431,7 @@ class AgoraEscrowClient:
         for the current parameters.
         """
         def _read() -> int:
-            if self.abi_version == "v2":
+            if self.abi_version in ("v2", "v2.1"):
                 return int(self.escrow.functions.previewFee(amount).call())
             return int(self.escrow.functions.computeFee(amount).call())
 
@@ -431,7 +467,7 @@ class AgoraEscrowClient:
         common "deadline passed, give the money back" path used by
         the backend, refundExpired is the correct V2 call.
         """
-        fn_name = "refundExpired" if self.abi_version == "v2" else "refund"
+        fn_name = "refund" if self.abi_version == "v1" else "refundExpired"
         return await self._send_tx(
             getattr(self.escrow.functions, fn_name)(job_id),
             tag=fn_name,
@@ -448,9 +484,9 @@ class AgoraEscrowClient:
         Reverts on V1 because the function does not exist; surface a clear
         error instead of letting the contract revert opaquely.
         """
-        if self.abi_version != "v2":
+        if self.abi_version not in ("v2", "v2.1"):
             raise RuntimeError(
-                "resolve_dispute requires V2 escrow; current abi_version="
+                "resolve_dispute requires V2 or V2.1 escrow; current abi_version="
                 f"{self.abi_version}"
             )
         return await self._send_tx(
@@ -458,7 +494,29 @@ class AgoraEscrowClient:
             tag="resolveDispute",
         )
 
-    # ── Internals ──────────────────────────────────────────────────
+    async def payee_force_approve(self, job_id: int) -> str:
+        """V2.1-only: payee force-approves after deadline + 7d grace.
+
+        Implements the M-V2-01 fix from ADR_M-V2-DECISIONS.md. The payee
+        unilaterally finalises a Submitted job once the deadline + 7-day
+        grace window has elapsed, bypassing the owner / disputeResolver
+        path that V2 forced for slow-payer scenarios.
+
+        Reverts on V1 / V2 because the function does not exist on those
+        contracts; surface a clear backend error rather than an opaque
+        revert.
+        """
+        if self.abi_version != "v2.1":
+            raise RuntimeError(
+                "payee_force_approve requires V2.1 escrow; current abi_version="
+                f"{self.abi_version}"
+            )
+        return await self._send_tx(
+            self.escrow.functions.payeeForceApprove(job_id),
+            tag="payeeForceApprove",
+        )
+
+        # ── Internals ──────────────────────────────────────────────────
     #
     # Sprint 44 / E-A8: settler_create_job() and _extract_job_id() were
     # removed. They were implemented for a never-realised "Agora settler

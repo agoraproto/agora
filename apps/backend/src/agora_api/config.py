@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # backwards compatibility with environments still pointing at the V1
     # escrow; production .env should be flipped to "v2" alongside the
     # ESCROW_CONTRACT_ADDRESS flip (Sprint 35h).
-    escrow_abi_version: Literal["v1", "v2"] = "v1"
+    escrow_abi_version: Literal["v1", "v2", "v2.1"] = "v1"
 
     # Auth / Custody (Privy - ADR 005)
     privy_app_id: str = ""
