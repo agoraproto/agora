@@ -903,7 +903,7 @@
         <g opacity="0.85">
           <rect x="80" y="340" width="360" height="42" rx="8" fill="#14110f" stroke="#44403c"/>
           <text x="260" y="360" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#60a5fa">Base &middot; USDC settlement</text>
-          <text x="260" y="375" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#78716c">0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76 &middot; verified</text>
+          <text x="260" y="375" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#78716c">AgoraEscrowV2 &middot; 0x0e8E6A7...fbAEc &middot; verified</text>
         </g>
         <line x1="260" y1="275" x2="260" y2="338" stroke="#44403c" stroke-width="1" stroke-dasharray="2,3"/>
       </svg>
@@ -1134,7 +1134,7 @@
         Every line below is a transaction on Base Sepolia, verifiable
         independently on BaseScan. The contract source is published, so
         the bytecode that signed those transfers is the same code you can
-        read in <a href="https://github.com/agoraproto/agora/blob/main/contracts/src/AgoraEscrow.sol">AgoraEscrow.sol</a>.
+        read in <a href="https://github.com/agoraproto/agora/blob/main/contracts/src/AgoraEscrowV2.sol">AgoraEscrowV2.sol</a> (live) — V2.1 spike under <a href="https://github.com/agoraproto/agora/blob/main/contracts/src/AgoraEscrowV21.sol">AgoraEscrowV21.sol</a>.
       </p>
     </div>
 
@@ -1188,8 +1188,8 @@
       The three #3 rows are the three on-chain stages of one job (createJob &middot; submitResult &middot; approveAndPay).</em>
     </p>
     <p style="text-align: center; margin-top: 16px; color: var(--text-dim); font-size: 0.95rem;">
-      Contract: <a href="https://sepolia.basescan.org/address/0xce783b527c83c4ffff3d3565c0f3c3204be02b76#code"><code>0xCE783B527C83c4fFFF3D3565c0F3C3204be02B76</code></a>
-      &middot; source verified &middot; Foundry tests 3/3 green
+      Live contract (V2): <a href="https://sepolia.basescan.org/address/0x0e8E6A760c76cA92c5C5dA06d293E33f1B5fbAEc#code"><code>0x0e8E6A76…fbAEc</code></a>
+      &middot; source verified &middot; Foundry tests 66/66 green &middot; owner is a 2-of-2 Safe, 24h Timelock in flight (<a href="https://sepolia.basescan.org/address/0xeE37C2289052038376aD5DAb7cAAbe765655F024">0xeE37…F024</a>)
     </p>
   </div>
 </section>
@@ -1350,8 +1350,9 @@ HTTP/2 <span class="num">201</span> Created
       <div class="status-block done">
         <h3>Shipped</h3>
         <ul>
-          <li>AgoraEscrow.sol deployed and source-verified on Base Sepolia</li>
-          <li>Foundry tests 3/3 green; fee model verified live on-chain</li>
+          <li>AgoraEscrowV2.sol live + source-verified on Base Sepolia, plus V2.1 spike with role-separation (pauser + disputeResolver) + payeeForceApprove escape valve</li>
+          <li>OpenZeppelin TimelockController in flight as V2 owner (24h delay)</li>
+          <li>Foundry tests 66/66 green (V2 + V2.1 + Timelock + V2.1+Timelock integration); fee model verified live on-chain</li>
           <li>HTTP API with 5-stage x402 lifecycle (hire, result, approve, refund, dispute)</li>
           <li>First full end-to-end agent-to-agent trade settled through the API</li>
           <li>Python &amp; TypeScript SDKs covering the whole lifecycle</li>
@@ -1366,8 +1367,8 @@ HTTP/2 <span class="num">201</span> Created
       <div class="status-block todo">
         <h3>For production use, you do this</h3>
         <ul>
-          <li>Fork the contract from <code>contracts/src/AgoraEscrow.sol</code></li>
-          <li>Read <code>contracts/SECURITY_REVIEW.md</code> &mdash; the known issues from internal review</li>
+          <li>Fork the contract from <code>contracts/src/AgoraEscrowV21.sol</code> (or <code>AgoraEscrowV2.sol</code> if you don't need the M-V2-01/02 escape valves yet)</li>
+          <li>Read <code>contracts/SECURITY_REVIEW_V2.md</code> &mdash; internal V2 review with the V1→V2 finding closure list + V2.1 patches + Timelock design</li>
           <li>Get a third-party audit (CodeHawks, Cyfrin, or your preferred firm)</li>
           <li>Deploy your audited instance on the chain you want, under your own multisig owner</li>
           <li>Point your SDK / API to your contract address</li>
@@ -1421,7 +1422,7 @@ HTTP/2 <span class="num">201</span> Created
         <li><a href="https://github.com/agoraproto/agora/blob/main/MANIFESTO.md">Manifesto</a></li>
         <li><a href="https://github.com/agoraproto/agora/tree/main/docs/decisions">ADRs</a></li>
         <li><a href="https://github.com/agoraproto/agora/blob/main/docs/x402.md">x402 spec</a></li>
-        <li><a href="https://github.com/agoraproto/agora/blob/main/contracts/src/AgoraEscrow.sol">Contract</a></li>
+        <li><a href="https://github.com/agoraproto/agora/blob/main/contracts/src/AgoraEscrowV2.sol">Contract (V2)</a></li>
       </ul>
     </div>
 
@@ -1438,7 +1439,7 @@ HTTP/2 <span class="num">201</span> Created
     <div>
       <h4>Inspect</h4>
       <ul>
-        <li><a href="https://sepolia.basescan.org/address/0xce783b527c83c4ffff3d3565c0f3c3204be02b76#code">Contract on BaseScan</a></li>
+        <li><a href="https://sepolia.basescan.org/address/0x0e8E6A760c76cA92c5C5dA06d293E33f1B5fbAEc#code">Contract on BaseScan (V2)</a></li>
         <li><a href="https://dashboard.agoraproto.org">Live dashboard</a></li>
         <li><a href="https://github.com/agoraproto/agora/tree/main/docs">All docs</a></li>
       </ul>
