@@ -3,7 +3,7 @@
 **Target:** `contracts/src/AgoraEscrowV2.sol` (Solidity 0.8.26, ~361 lines)
 **Tests:** `contracts/test/AgoraEscrowV2.t.sol` (20 forge tests, all green)
 **Deployed (testnet):** [`0x0e8E6A760c76cA92c5C5dA06d293E33f1B5fbAEc`](https://sepolia.basescan.org/address/0x0e8E6A760c76cA92c5C5dA06d293E33f1B5fbAEc#code) on Base Sepolia
-**Owner:** 2-of-2 Gnosis Safe [`0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC`](https://sepolia.basescan.org/address/0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC) (Sprint 37)
+**Owner:** OpenZeppelin TimelockController [`0xeE37C2289052038376aD5DAb7cAAbe765655F024`](https://sepolia.basescan.org/address/0xeE37C2289052038376aD5DAb7cAAbe765655F024) (Sprint 45 Phase 2b, 2026-06-10). Proposer + canceller + executor of the Timelock is the 2-of-2 Safe [`0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC`](https://sepolia.basescan.org/address/0x8Ec63Fe30DAb84308B5009b8D91d9E4dEB5a61FC) (Sprint 37).
 **Reviewer:** internal builder self-audit, Sprint 39 (2026-06-01)
 **Status:** **NOT a substitute for external audit.** Findings here are surfaced as a transparency exercise to make external reviewer time more productive.
 
