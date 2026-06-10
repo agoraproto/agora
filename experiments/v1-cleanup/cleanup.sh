@@ -28,7 +28,7 @@ echo "  Mode: $([ "$EXECUTE" = "1" ] && echo "EXECUTE (broadcasting refund txs)"
 echo "============================================================"
 
 # Pre-flight: how much USDC is actually stuck?
-V1_USDC=$($CAST call $USDC "balanceOf(address)(uint256)" $V1 --rpc-url $RPC)
+V1_USDC=$($CAST call $USDC "balanceOf(address)(uint256)" $V1 --rpc-url $RPC | awk '{print $1}')
 echo ""
 echo "=== Pre-flight ==="
 echo "  V1 contract:    $V1"
@@ -77,11 +77,13 @@ while IFS= read -r jid; do
         NOT_FOUND+=("$jid")
         continue
     fi
-    # Parse tuple output -- cast returns one value per line
-    payer=$(echo "$out"   | sed -n '1p')
-    amount=$(echo "$out"  | sed -n '3p' | awk '{print $1}')
-    deadline=$(echo "$out" | sed -n '6p')
-    status=$(echo "$out"  | sed -n '7p')
+    # Parse tuple output -- cast returns one value per line.
+    # Recent cast versions append a human-readable "[1.062e7]" suffix to
+    # numeric outputs; we strip it with `awk '{print $1}'`.
+    payer=$(echo "$out"    | sed -n '1p' | awk '{print $1}')
+    amount=$(echo "$out"   | sed -n '3p' | awk '{print $1}')
+    deadline=$(echo "$out" | sed -n '6p' | awk '{print $1}')
+    status=$(echo "$out"   | sed -n '7p' | awk '{print $1}')
 
     # V1 status enum: 0=None, 1=Funded, 2=Submitted, 3=Approved, 4=Disputed, 5=Refunded
     case "$status" in
@@ -179,20 +181,37 @@ for entry in "${REFUND_NOW[@]}"; do
     jid=$(echo "$entry" | awk '{print $1}')
     echo ""
     echo "  Refunding V1 jobId=$jid..."
-    TX=$($CAST send \
+    # Capture combined stdout+stderr. Try JSON first; if that fails (cast
+    # gave us a half-printed mess because the RPC threw), fall back to
+    # extracting any 0x... tx-hash from the raw text. Sepolia public RPC
+    # gets flaky under sequential load, but the tx itself often DID
+    # broadcast -- we just couldn't parse the success ack.
+    RAW=$($CAST send \
         --rpc-url $RPC \
         --private-key "$DEPLOYER_KEY" \
         --gas-limit 100000 \
         $V1 \
         "refund(uint256)" \
         "$jid" \
-        --json 2>&1 | python3 -c "
-import sys, json
+        --json 2>&1)
+    TX=$(echo "$RAW" | python3 -c "
+import sys, json, re
+raw = sys.stdin.read()
+# Path 1: clean JSON
 try:
-    d = json.loads(sys.stdin.read())
-    print(d.get('transactionHash', 'unknown'))
-except Exception as e:
-    print(f'PARSE_ERR: {e}')
+    d = json.loads(raw)
+    h = d.get('transactionHash')
+    if h and h.startswith('0x'):
+        print(h)
+        sys.exit(0)
+except Exception:
+    pass
+# Path 2: scan for any 64-hex tx hash in the raw output
+m = re.search(r'0x[0-9a-fA-F]{64}', raw)
+if m:
+    print(m.group(0))
+    sys.exit(0)
+print('PARSE_ERR')
 ")
     if [[ "$TX" == 0x* ]]; then
         echo "    tx: $TX"
@@ -207,8 +226,10 @@ except Exception as e:
         echo "    FAIL: $TX"
         FAILED=$((FAILED + 1))
     fi
-    # Small sleep to be gentle on the public RPC
-    sleep 0.5
+    # Sepolia free RPC is flaky under sequential load -- 0.5s wasn't enough
+    # in run-1/run-2 (43% of broadcasts gave PARSE_ERR responses). 2s is
+    # generous but still keeps total runtime <2 min for typical batch sizes.
+    sleep 2
 done
 
 echo ""
@@ -217,7 +238,7 @@ echo "  Refund batch done."
 echo "  Success: $SUCCESS / ${#REFUND_NOW[@]}"
 echo "  Failed:  $FAILED"
 echo ""
-V1_USDC_AFTER=$($CAST call $USDC "balanceOf(address)(uint256)" $V1 --rpc-url $RPC)
+V1_USDC_AFTER=$($CAST call $USDC "balanceOf(address)(uint256)" $V1 --rpc-url $RPC | awk '{print $1}')
 echo "  V1 USDC after:  $V1_USDC_AFTER micro-USDC ($(echo "scale=6; $V1_USDC_AFTER / 1000000" | bc) USDC)"
 echo "  V1 USDC before: $V1_USDC micro-USDC"
 echo "  Delta:          $(($V1_USDC - $V1_USDC_AFTER)) micro-USDC released"
